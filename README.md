@@ -7,9 +7,9 @@ language: en
 comment:  Embed the glpython editor, execution visualizer, and turtle graphics
           in LiaScript courses.
 
-@GLPython.eval: @GLPython.embed(@uid,eval,```@0```)
+@GLPython.eval: @GLPython.embed(@uid,eval)
 
-@GLPython.turtle: @GLPython.embed(@uid,turtle,```@0```)
+@GLPython.turtle: @GLPython.embed(@uid,turtle)
 
 @GLPython.embed
 <script run-once>
@@ -19,11 +19,15 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const frame = document.getElementById("glpython-frame-@0")
   const error = document.getElementById("glpython-error-@0")
-  const source = String.raw`@2`
   const mode = "@1"
-  const nativeCodeBlock = frame
-    .closest(".lia-slide__content")
-    ?.querySelector(".lia-code--block")
+  const codeBlocks = [
+    ...(frame.closest(".lia-slide__content")?.querySelectorAll(".lia-code--block") ?? []),
+  ]
+  const nativeCodeBlock = codeBlocks.findLast((block) =>
+    block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
+  )
+  const nativeEditor = nativeCodeBlock?.querySelector("lia-editor")
+  const source = typeof nativeEditor?.value === "string" ? nativeEditor.value : null
   if (nativeCodeBlock) nativeCodeBlock.hidden = true
 
   const showError = (message) => {
@@ -46,6 +50,11 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (!message || message.version !== protocolVersion) return
 
     if (message.type === "glpython:ready") {
+      if (source === null) {
+        showError("The LiaScript source block could not be read.")
+        send.lia("LIA: stop")
+        return
+      }
       const inputAvailable = message.capabilities?.input === true
       frame.dataset.inputAvailable = String(inputAvailable)
       if (!inputAvailable && /(^|[^\w])input\s*\(/.test(source)) {
