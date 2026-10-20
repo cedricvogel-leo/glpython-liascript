@@ -21,6 +21,10 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const error = document.getElementById("glpython-error-@0")
   const source = String.raw`@2`
   const mode = "@1"
+  const nativeCodeBlock = frame
+    .closest(".lia-slide__content")
+    ?.querySelector(".lia-code--block")
+  if (nativeCodeBlock) nativeCodeBlock.hidden = true
 
   const showError = (message) => {
     error.textContent = message
