@@ -11,6 +11,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
 @GLPython.turtle: @GLPython.embed(@uid,turtle)
 
+@GLPython.visual: @GLPython.embed(@uid,visual)
+
 @GLPython.embed
 <script>
 (() => {
@@ -102,7 +104,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       runtimeReady = true
       inputAvailable = message.capabilities?.input === true
       frame.dataset.inputAvailable = String(inputAvailable)
-      sendCommand("glpython:load")
+      sendCommand(mode === "visual" ? "glpython:visualize" : "glpython:load")
       if (pendingRun !== null) {
         postSource("glpython:run", pendingRun)
         pendingRun = null
@@ -113,7 +115,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       if (resetButton) resetButton.disabled = false
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
-      frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
+      const minimumHeight = mode === "visual" ? 420 : 170
+      frame.style.height = `${Math.max(minimumHeight, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
       showError(message.message || "The glpython embed reported an error.")
     }
@@ -125,6 +128,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (frame !== nextFrame) runtimeReady = false
     frame = nextFrame
     error = document.getElementById(`glpython-error-${sessionId}`)
+    const controls = document.getElementById(`glpython-controls-${sessionId}`)
     const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
     const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
     const codeBlocks = [
@@ -134,6 +138,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
     )
     nativeEditor = nativeCodeBlock?.querySelector("lia-editor") ?? null
+    if (nativeCodeBlock) nativeCodeBlock.hidden = mode === "visual"
+    if (controls) controls.hidden = mode === "visual"
     if (visualizeButton) {
       visualizeButton.hidden = mode !== "eval"
       visualizeButton.onclick = () => sendCommand("glpython:visualize")
@@ -141,6 +147,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (resetButton) resetButton.onclick = () => sendCommand("glpython:reset")
     if (frame.dataset.glpythonInitialized === "true") return
     frame.dataset.glpythonInitialized = "true"
+    if (mode === "visual") frame.style.height = "420px"
     frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
   }
 
@@ -165,7 +172,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 </script>
 
 <div class="glpython-embed">
-  <div style="display:flex;gap:8px;justify-content:flex-end;margin:8px 0">
+  <div id="glpython-controls-@0" style="display:flex;gap:8px;justify-content:flex-end;margin:8px 0">
     <button id="glpython-reset-@0" type="button" disabled>Reset runtime</button>
     <button id="glpython-visualize-@0" type="button" disabled>Visualize</button>
   </div>
@@ -247,6 +254,21 @@ for _ in range(4):
     right(90)
 ```
 @GLPython.turtle
+
+## Visualization only
+
+Use `@GLPython.visual` when learners should explore a prepared program without
+editing it. The fenced source is hidden and the visualization starts
+automatically. The visualizer keeps its scrubber, restart, step, play/pause,
+animation, and synchronized output controls.
+
+```python
+total = 0
+for value in range(1, 5):
+    total += value
+print(total)
+```
+@GLPython.visual
 
 ## Hosting and compatibility
 
