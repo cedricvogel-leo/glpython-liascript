@@ -12,6 +12,21 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 @GLPython.turtle: @GLPython.embed(@uid,turtle)
 
 @GLPython.embed
+<script>
+(() => {
+  const session = window.__glpythonSessions?.get("@0")
+  const source = "@'input"
+  if (!session) {
+    send.lia("HTML: <pre style='color:red'>The glpython runtime is not ready.</pre>")
+    return
+  }
+  session.run(source)
+  window.setTimeout(() => send.lia("LIA: stop"), 0)
+})()
+
+"LIA: wait"
+</script>
+
 <script run-once>
 (() => {
   const protocolVersion = 1
@@ -113,21 +128,6 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }, 5000)
   })
   frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
-})()
-
-"LIA: wait"
-</script>
-
-<script>
-(() => {
-  const session = window.__glpythonSessions?.get("@0")
-  const source = "@'input"
-  if (!session) {
-    send.lia("HTML: <pre style='color:red'>The glpython runtime is not ready.</pre>")
-    return
-  }
-  session.run(source)
-  window.setTimeout(() => send.lia("LIA: stop"), 0)
 })()
 
 "LIA: wait"
