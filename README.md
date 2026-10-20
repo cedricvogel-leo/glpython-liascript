@@ -7,19 +7,19 @@ language: en
 comment:  Embed the glpython editor, execution visualizer, and turtle graphics
           in LiaScript courses.
 
-@GLPython.eval: @GLPython.embed(@uid,eval)
+@GLPython.eval: @GLPython.embed(@uid,eval,```@0```)
 
-@GLPython.turtle: @GLPython.embed(@uid,turtle)
+@GLPython.turtle: @GLPython.embed(@uid,turtle,```@0```)
 
 @GLPython.embed
-<script>
+<script run-once>
 (() => {
   const protocolVersion = 1
   const embedOrigin = "https://cedricvogel-leo.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const frame = document.getElementById("glpython-frame-@0")
   const error = document.getElementById("glpython-error-@0")
-  const source = "@'input"
+  const source = String.raw`@2`
   const mode = "@1"
 
   const showError = (message) => {
@@ -50,6 +50,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
         error.hidden = true
       }
       sendSource()
+      send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       frame.style.height = `${Math.max(420, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
@@ -65,6 +66,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   })
   frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
 })()
+
+"LIA: wait"
 </script>
 
 <div class="glpython-embed">
