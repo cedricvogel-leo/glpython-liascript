@@ -19,7 +19,6 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const frame = document.getElementById("glpython-frame-@0")
   const error = document.getElementById("glpython-error-@0")
-  const runButton = document.getElementById("glpython-run-@0")
   const visualizeButton = document.getElementById("glpython-visualize-@0")
   const resetButton = document.getElementById("glpython-reset-@0")
   const mode = "@1"
@@ -71,7 +70,19 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }, embedOrigin)
   }
 
-  runButton.addEventListener("click", () => sendCommand("glpython:run"))
+  const sessions = window.__glpythonSessions ??= new Map()
+  sessions.set("@0", {
+    run(source) {
+      reportInputCapability(source)
+      frame.contentWindow?.postMessage({
+        type: "glpython:run",
+        version: protocolVersion,
+        source,
+        mode,
+      }, embedOrigin)
+    },
+  })
+
   visualizeButton.addEventListener("click", () => sendCommand("glpython:visualize"))
   resetButton.addEventListener("click", () => sendCommand("glpython:reset"))
   visualizeButton.hidden = mode !== "eval"
@@ -85,7 +96,6 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       inputAvailable = message.capabilities?.input === true
       frame.dataset.inputAvailable = String(inputAvailable)
       sendCommand("glpython:load")
-      runButton.disabled = false
       visualizeButton.disabled = false
       resetButton.disabled = false
       send.lia("LIA: stop")
@@ -108,11 +118,25 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 "LIA: wait"
 </script>
 
+<script>
+(() => {
+  const session = window.__glpythonSessions?.get("@0")
+  const source = "@'input"
+  if (!session) {
+    send.lia("HTML: <pre style='color:red'>The glpython runtime is not ready.</pre>")
+    return
+  }
+  session.run(source)
+  window.setTimeout(() => send.lia("LIA: stop"), 0)
+})()
+
+"LIA: wait"
+</script>
+
 <div class="glpython-embed">
   <div style="display:flex;gap:8px;justify-content:flex-end;margin:8px 0">
     <button id="glpython-reset-@0" type="button" disabled>Reset runtime</button>
     <button id="glpython-visualize-@0" type="button" disabled>Visualize</button>
-    <button id="glpython-run-@0" type="button" disabled>Run</button>
   </div>
   <p id="glpython-error-@0" class="glpython-error" hidden></p>
   <iframe
@@ -160,8 +184,9 @@ sys.version
 @GLPython.eval
 
 LiaScript owns the visible editor and preserves its source through its course and PWA
-state. The glpython runtime provides normal execution, output, and the step-by-step
-visualizer without mounting a second editor. It does not reserve space for turtle
+state. LiaScript's native Execute action runs the current source through glpython. The
+glpython runtime provides output and the step-by-step visualizer without mounting
+a second editor. It does not reserve space for turtle
 graphics.
 
 ## Turtle graphics
