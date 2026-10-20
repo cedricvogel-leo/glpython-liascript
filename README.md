@@ -139,7 +139,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     )
     nativeEditor = nativeCodeBlock?.querySelector("lia-editor") ?? null
     if (nativeCodeBlock) nativeCodeBlock.hidden = mode === "visual"
-    if (controls) controls.hidden = mode === "visual"
+    if (controls) controls.style.display = mode === "visual" ? "none" : "flex"
     if (visualizeButton) {
       visualizeButton.hidden = mode !== "eval"
       visualizeButton.onclick = () => sendCommand("glpython:visualize")
