@@ -12,86 +12,171 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 @GLPython.turtle: @GLPython.embed(@uid,turtle)
 
 @GLPython.embed
+<script>
+(() => {
+  const session = window.__glpythonSessions?.get("@0")
+  const source = "@'input"
+  if (!session) {
+    send.lia("HTML: <pre style='color:red'>The glpython runtime is not ready.</pre>")
+    return
+  }
+  session.run(source)
+  window.setTimeout(() => send.lia("LIA: stop"), 0)
+})()
+
+"LIA: wait"
+</script>
+
 <script run-once>
 (() => {
   const protocolVersion = 1
   const embedOrigin = "https://cedricvogel-leo.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
-  const frame = document.getElementById("glpython-frame-@0")
-  const error = document.getElementById("glpython-error-@0")
+  const sessionId = "@0"
   const mode = "@1"
-  const codeBlocks = [
-    ...(frame.closest(".lia-slide__content")?.querySelectorAll(".lia-code--block") ?? []),
-  ]
-  const nativeCodeBlock = codeBlocks.findLast((block) =>
-    block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
-  )
-  const nativeEditor = nativeCodeBlock?.querySelector("lia-editor")
-  if (nativeCodeBlock) nativeCodeBlock.hidden = true
+  const sessions = window.__glpythonSessions ??= new Map()
+  const existingSession = sessions.get(sessionId)
+  if (existingSession) {
+    existingSession.attach()
+    return
+  }
+
+  let frame = null
+  let error = null
+  let nativeEditor = null
+  let inputAvailable = false
+  let runtimeReady = false
+  let pendingRun = null
 
   const showError = (message) => {
+    if (!error) return
     error.textContent = message
     error.hidden = false
   }
 
-  const sendSource = (source) => {
+  const readSource = () => {
+    const source = nativeEditor?.value
+    if (typeof source !== "string") {
+      showError("The LiaScript source block could not be read.")
+      return null
+    }
+    return source
+  }
+
+  const reportInputCapability = (source) => {
+    if (!error) return
+    if (!inputAvailable && /(^|[^\w])input\s*\(/.test(source)) {
+      showError("Python input() is unavailable in this LiaScript embedding context.")
+    } else {
+      error.hidden = true
+    }
+  }
+
+  const postSource = (type, source) => {
+    if (!frame?.contentWindow) return
+    reportInputCapability(source)
     frame.contentWindow.postMessage({
-      type: "glpython:load",
+      type,
       version: protocolVersion,
       source,
       mode,
     }, embedOrigin)
   }
 
+  const sendCommand = (type) => {
+    if (!frame?.contentWindow) return
+    if (type === "glpython:reset") {
+      frame.contentWindow.postMessage({ type, version: protocolVersion }, embedOrigin)
+      return
+    }
+    const source = readSource()
+    if (source !== null) postSource(type, source)
+  }
+
   const onMessage = (event) => {
-    if (event.origin !== embedOrigin || event.source !== frame.contentWindow) return
+    if (!frame || event.origin !== embedOrigin || event.source !== frame.contentWindow) return
     const message = event.data
     if (!message || message.version !== protocolVersion) return
 
     if (message.type === "glpython:ready") {
-      const source = nativeEditor?.value
-      if (typeof source !== "string") {
-        showError("The LiaScript source block could not be read.")
-        send.lia("LIA: stop")
-        return
-      }
-      const inputAvailable = message.capabilities?.input === true
+      runtimeReady = true
+      inputAvailable = message.capabilities?.input === true
       frame.dataset.inputAvailable = String(inputAvailable)
-      if (!inputAvailable && /(^|[^\w])input\s*\(/.test(source)) {
-        showError("Python input() is unavailable in this LiaScript embedding context.")
-      } else {
-        error.hidden = true
+      sendCommand("glpython:load")
+      if (pendingRun !== null) {
+        postSource("glpython:run", pendingRun)
+        pendingRun = null
       }
-      sendSource(source)
+      const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
+      const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
+      if (visualizeButton) visualizeButton.disabled = false
+      if (resetButton) resetButton.disabled = false
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
-      frame.style.height = `${Math.max(420, Math.min(message.height, 1200))}px`
+      frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
       showError(message.message || "The glpython embed reported an error.")
     }
   }
 
+  const attach = () => {
+    const nextFrame = document.getElementById(`glpython-frame-${sessionId}`)
+    if (!nextFrame) return
+    if (frame !== nextFrame) runtimeReady = false
+    frame = nextFrame
+    error = document.getElementById(`glpython-error-${sessionId}`)
+    const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
+    const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
+    const codeBlocks = [
+      ...(frame.closest(".lia-slide__content")?.querySelectorAll(".lia-code--block") ?? []),
+    ]
+    const nativeCodeBlock = codeBlocks.findLast((block) =>
+      block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    nativeEditor = nativeCodeBlock?.querySelector("lia-editor") ?? null
+    if (visualizeButton) {
+      visualizeButton.hidden = mode !== "eval"
+      visualizeButton.onclick = () => sendCommand("glpython:visualize")
+    }
+    if (resetButton) resetButton.onclick = () => sendCommand("glpython:reset")
+    if (frame.dataset.glpythonInitialized === "true") return
+    frame.dataset.glpythonInitialized = "true"
+    frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
+  }
+
+  const session = {
+    attach,
+    run(source) {
+      attach()
+      if (runtimeReady) {
+        postSource("glpython:run", source)
+      } else {
+        pendingRun = source
+      }
+    },
+  }
+  sessions.set(sessionId, session)
   window.addEventListener("message", onMessage)
-  frame.addEventListener("load", () => {
-    window.setTimeout(() => {
-      if (!frame.contentWindow) showError("The glpython embed could not be loaded.")
-    }, 5000)
-  })
-  frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
+  new MutationObserver(attach).observe(document.body, { childList: true, subtree: true })
+  attach()
 })()
 
 "LIA: wait"
 </script>
 
 <div class="glpython-embed">
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin:8px 0">
+    <button id="glpython-reset-@0" type="button" disabled>Reset runtime</button>
+    <button id="glpython-visualize-@0" type="button" disabled>Visualize</button>
+  </div>
   <p id="glpython-error-@0" class="glpython-error" hidden></p>
   <iframe
     id="glpython-frame-@0"
-    title="glpython @1 editor"
+    title="glpython @1 runtime"
     loading="lazy"
     referrerpolicy="strict-origin"
     allow="clipboard-read; clipboard-write"
-    style="display:block;width:100%;height:620px;border:0;border-radius:8px;background:#f4f1e9"
+    style="display:block;width:100%;height:220px;border:0;border-radius:8px;background:#f4f1e9"
   ></iframe>
 </div>
 @end
@@ -103,8 +188,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 Run and visualize Python directly in a LiaScript course with the browser-based
 [glpython](https://github.com/cedricvogel-leo/glpython) editor.
 
-The macros use a separately hosted iframe. Python runs locally in the learner's
-browser through Pyodide; source code is sent to the iframe only after an
+The macros use LiaScript's native editor as the source of truth and a separately
+hosted iframe for execution and visualization. Python runs locally in the learner's browser through Pyodide; the current source is sent for each action through an
 origin-checked, versioned handshake.
 
 ## Import
@@ -129,8 +214,25 @@ sys.version
 ```
 @GLPython.eval
 
-The compact eval layout provides editing, normal execution, output, and the
-step-by-step visualizer. It does not show or reserve space for turtle graphics.
+LiaScript owns the visible editor and preserves its source through its course and PWA
+state. LiaScript's native Execute action runs the current source through glpython. The
+glpython runtime provides output and the step-by-step visualizer without mounting a
+second editor. It does not reserve space for turtle graphics.
+
+## State and navigation
+
+The fenced source belongs to LiaScript. Edits therefore survive slide navigation and
+leaving the course followed by browser Back in the same way as the official Pyodide
+macro. A hard reload returns to the Markdown source baseline, which also matches the
+official macro's behavior.
+
+Each macro has an isolated runtime iframe. If LiaScript recreates that iframe, the
+macro reattaches a clean worker and reloads the current LiaScript source; Python
+globals, output, turtle state, and visualization position are intentionally not
+serialized. **Reset runtime** also terminates the current worker and creates a clean
+one. This per-block worker lifecycle is the boundary a future post-run REPL will use:
+Run can retain a namespace while the worker survives, and Reset can discard it
+without changing LiaScript's source.
 
 ## Turtle graphics
 
