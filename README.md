@@ -62,7 +62,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       } else {
         error.hidden = true
       }
-      sendSource()
+      sendSource(source)
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       frame.style.height = `${Math.max(420, Math.min(message.height, 1200))}px`
