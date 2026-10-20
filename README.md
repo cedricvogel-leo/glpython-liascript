@@ -42,7 +42,13 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (!message || message.version !== protocolVersion) return
 
     if (message.type === "glpython:ready") {
-      error.hidden = true
+      const inputAvailable = message.capabilities?.input === true
+      frame.dataset.inputAvailable = String(inputAvailable)
+      if (!inputAvailable && /(^|[^\w])input\s*\(/.test(source)) {
+        showError("Python input() is unavailable in this LiaScript embedding context.")
+      } else {
+        error.hidden = true
+      }
       sendSource()
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       frame.style.height = `${Math.max(420, Math.min(message.height, 1200))}px`
@@ -132,12 +138,12 @@ The template currently targets:
 https://cedricvogel-leo.github.io/glpython-editor/
 ```
 
-The embed protocol is versioned independently of the course template. The
-hosting page must serve the headers required by the glpython editor. Synchronous
-Python `input()` additionally depends on cross-origin isolation in the complete
-top-level LiaScript embedding context; when that browser capability is absent,
-other execution features remain available but `input()` cannot block the
-worker.
+The embed protocol is versioned independently of the course template.
+Synchronous Python `input()` depends on cross-origin isolation in the complete
+top-level LiaScript embedding context. The iframe reports that capability during
+its handshake. If a snippet uses `input()` where the capability is unavailable,
+the macro displays a warning; editing, normal execution, visualization, and
+turtle graphics remain available.
 
 ## Development
 
