@@ -32,21 +32,22 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const protocolVersion = 1
   const embedOrigin = "https://cedricvogel-leo.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
-  const frame = document.getElementById("glpython-frame-@0")
-  const error = document.getElementById("glpython-error-@0")
-  const visualizeButton = document.getElementById("glpython-visualize-@0")
-  const resetButton = document.getElementById("glpython-reset-@0")
+  const sessionId = "@0"
   const mode = "@1"
-  const codeBlocks = [
-    ...(frame.closest(".lia-slide__content")?.querySelectorAll(".lia-code--block") ?? []),
-  ]
-  const nativeCodeBlock = codeBlocks.findLast((block) =>
-    block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
-  )
-  const nativeEditor = nativeCodeBlock?.querySelector("lia-editor")
+  const sessions = window.__glpythonSessions ??= new Map()
+  const existingSession = sessions.get(sessionId)
+  if (existingSession) {
+    existingSession.attach()
+    return
+  }
+
+  let frame = null
+  let error = null
+  let nativeEditor = null
   let inputAvailable = false
 
   const showError = (message) => {
+    if (!error) return
     error.textContent = message
     error.hidden = false
   }
@@ -61,6 +62,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   }
 
   const reportInputCapability = (source) => {
+    if (!error) return
     if (!inputAvailable && /(^|[^\w])input\s*\(/.test(source)) {
       showError("Python input() is unavailable in this LiaScript embedding context.")
     } else {
@@ -68,14 +70,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }
   }
 
-  const sendCommand = (type) => {
-    if (!frame.contentWindow) return
-    if (type === "glpython:reset") {
-      frame.contentWindow.postMessage({ type, version: protocolVersion }, embedOrigin)
-      return
-    }
-    const source = readSource()
-    if (source === null) return
+  const postSource = (type, source) => {
+    if (!frame?.contentWindow) return
     reportInputCapability(source)
     frame.contentWindow.postMessage({
       type,
@@ -85,25 +81,18 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }, embedOrigin)
   }
 
-  const sessions = window.__glpythonSessions ??= new Map()
-  sessions.set("@0", {
-    run(source) {
-      reportInputCapability(source)
-      frame.contentWindow?.postMessage({
-        type: "glpython:run",
-        version: protocolVersion,
-        source,
-        mode,
-      }, embedOrigin)
-    },
-  })
-
-  visualizeButton.addEventListener("click", () => sendCommand("glpython:visualize"))
-  resetButton.addEventListener("click", () => sendCommand("glpython:reset"))
-  visualizeButton.hidden = mode !== "eval"
+  const sendCommand = (type) => {
+    if (!frame?.contentWindow) return
+    if (type === "glpython:reset") {
+      frame.contentWindow.postMessage({ type, version: protocolVersion }, embedOrigin)
+      return
+    }
+    const source = readSource()
+    if (source !== null) postSource(type, source)
+  }
 
   const onMessage = (event) => {
-    if (event.origin !== embedOrigin || event.source !== frame.contentWindow) return
+    if (!frame || event.origin !== embedOrigin || event.source !== frame.contentWindow) return
     const message = event.data
     if (!message || message.version !== protocolVersion) return
 
@@ -111,8 +100,10 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       inputAvailable = message.capabilities?.input === true
       frame.dataset.inputAvailable = String(inputAvailable)
       sendCommand("glpython:load")
-      visualizeButton.disabled = false
-      resetButton.disabled = false
+      const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
+      const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
+      if (visualizeButton) visualizeButton.disabled = false
+      if (resetButton) resetButton.disabled = false
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
@@ -121,13 +112,41 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }
   }
 
+  const attach = () => {
+    const nextFrame = document.getElementById(`glpython-frame-${sessionId}`)
+    if (!nextFrame) return
+    frame = nextFrame
+    error = document.getElementById(`glpython-error-${sessionId}`)
+    const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
+    const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
+    const codeBlocks = [
+      ...(frame.closest(".lia-slide__content")?.querySelectorAll(".lia-code--block") ?? []),
+    ]
+    const nativeCodeBlock = codeBlocks.findLast((block) =>
+      block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
+    )
+    nativeEditor = nativeCodeBlock?.querySelector("lia-editor") ?? null
+    if (visualizeButton) {
+      visualizeButton.hidden = mode !== "eval"
+      visualizeButton.onclick = () => sendCommand("glpython:visualize")
+    }
+    if (resetButton) resetButton.onclick = () => sendCommand("glpython:reset")
+    if (frame.dataset.glpythonInitialized === "true") return
+    frame.dataset.glpythonInitialized = "true"
+    frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
+  }
+
+  const session = {
+    attach,
+    run(source) {
+      attach()
+      postSource("glpython:run", source)
+    },
+  }
+  sessions.set(sessionId, session)
   window.addEventListener("message", onMessage)
-  frame.addEventListener("load", () => {
-    window.setTimeout(() => {
-      if (!frame.contentWindow) showError("The glpython embed could not be loaded.")
-    }, 5000)
-  })
-  frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
+  new MutationObserver(attach).observe(document.body, { childList: true, subtree: true })
+  attach()
 })()
 
 "LIA: wait"
