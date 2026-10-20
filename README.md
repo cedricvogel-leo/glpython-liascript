@@ -45,6 +45,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   let error = null
   let nativeEditor = null
   let inputAvailable = false
+  let runtimeReady = false
+  let pendingRun = null
 
   const showError = (message) => {
     if (!error) return
@@ -97,9 +99,14 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (!message || message.version !== protocolVersion) return
 
     if (message.type === "glpython:ready") {
+      runtimeReady = true
       inputAvailable = message.capabilities?.input === true
       frame.dataset.inputAvailable = String(inputAvailable)
       sendCommand("glpython:load")
+      if (pendingRun !== null) {
+        postSource("glpython:run", pendingRun)
+        pendingRun = null
+      }
       const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
       const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
       if (visualizeButton) visualizeButton.disabled = false
@@ -115,6 +122,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const attach = () => {
     const nextFrame = document.getElementById(`glpython-frame-${sessionId}`)
     if (!nextFrame) return
+    if (frame !== nextFrame) runtimeReady = false
     frame = nextFrame
     error = document.getElementById(`glpython-error-${sessionId}`)
     const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
@@ -140,7 +148,11 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     attach,
     run(source) {
       attach()
-      postSource("glpython:run", source)
+      if (runtimeReady) {
+        postSource("glpython:run", source)
+      } else {
+        pendingRun = source
+      }
     },
   }
   sessions.set(sessionId, session)
@@ -204,9 +216,23 @@ sys.version
 
 LiaScript owns the visible editor and preserves its source through its course and PWA
 state. LiaScript's native Execute action runs the current source through glpython. The
-glpython runtime provides output and the step-by-step visualizer without mounting
-a second editor. It does not reserve space for turtle
-graphics.
+glpython runtime provides output and the step-by-step visualizer without mounting a
+second editor. It does not reserve space for turtle graphics.
+
+## State and navigation
+
+The fenced source belongs to LiaScript. Edits therefore survive slide navigation and
+leaving the course followed by browser Back in the same way as the official Pyodide
+macro. A hard reload returns to the Markdown source baseline, which also matches the
+official macro's behavior.
+
+Each macro has an isolated runtime iframe. If LiaScript recreates that iframe, the
+macro reattaches a clean worker and reloads the current LiaScript source; Python
+globals, output, turtle state, and visualization position are intentionally not
+serialized. **Reset runtime** also terminates the current worker and creates a clean
+one. This per-block worker lifecycle is the boundary a future post-run REPL will use:
+Run can retain a namespace while the worker survives, and Reset can discard it
+without changing LiaScript's source.
 
 ## Turtle graphics
 
