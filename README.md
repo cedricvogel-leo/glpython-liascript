@@ -27,7 +27,6 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
   )
   const nativeEditor = nativeCodeBlock?.querySelector("lia-editor")
-  const source = typeof nativeEditor?.value === "string" ? nativeEditor.value : null
   if (nativeCodeBlock) nativeCodeBlock.hidden = true
 
   const showError = (message) => {
@@ -35,7 +34,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     error.hidden = false
   }
 
-  const sendSource = () => {
+  const sendSource = (source) => {
     frame.contentWindow.postMessage({
       type: "glpython:load",
       version: protocolVersion,
@@ -50,7 +49,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (!message || message.version !== protocolVersion) return
 
     if (message.type === "glpython:ready") {
-      if (source === null) {
+      const source = nativeEditor?.value
+      if (typeof source !== "string") {
         showError("The LiaScript source block could not be read.")
         send.lia("LIA: stop")
         return
