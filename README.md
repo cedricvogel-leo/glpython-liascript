@@ -36,7 +36,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
 <script run-once>
 (() => {
-  const protocolVersion = 2
+  const protocolVersion = 3
   const embedOrigin = "https://cedricvogel-leo.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const sessionId = "@0"
@@ -60,6 +60,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     de: {
       reset: "Laufzeit zurücksetzen",
       visualize: "Visualisieren",
+      tests: "Tests",
       frameTitle: "glpython-Laufzeit",
       sourceUnreadable: "Der LiaScript-Quelltext konnte nicht gelesen werden.",
       inputUnavailable: "Python-input() ist in dieser LiaScript-Einbettung nicht verfügbar.",
@@ -77,6 +78,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     en: {
       reset: "Reset runtime",
       visualize: "Visualize",
+      tests: "Tests",
       frameTitle: "glpython runtime",
       sourceUnreadable: "The LiaScript source block could not be read.",
       inputUnavailable: "Python input() is unavailable in this LiaScript embedding context.",
@@ -104,6 +106,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   let codeBlock = null
   let inputAvailable = false
   let filesSupported = false
+  let testsSupported = false
   let runtimeReady = false
   let pendingRun = false
   // The code file chosen in the split button's menu; null runs the last one.
@@ -227,7 +230,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     const main = program.files.find((file) => file.path === program.mainFile)
     reportInputCapability(main.source)
     if (filesSupported) {
-      frame.contentWindow.postMessage({ type, version: protocolVersion, source: main.source, mode, files: program.files, mainFile: program.mainFile }, embedOrigin)
+      // Version 3 ("glpython:test") only with embeds that understand it.
+      frame.contentWindow.postMessage({ type, version: testsSupported ? protocolVersion : 2, source: main.source, mode, files: program.files, mainFile: program.mainFile }, embedOrigin)
     } else {
       if (program.files.length > 1) showError(strings.filesUnsupported)
       frame.contentWindow.postMessage({ type, version: 1, source: main.source, mode }, embedOrigin)
@@ -237,7 +241,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const sendCommand = (type, fallbackSource) => {
     if (!frame?.contentWindow) return
     if (type === "glpython:reset") {
-      frame.contentWindow.postMessage({ type, version: filesSupported ? protocolVersion : 1 }, embedOrigin)
+      frame.contentWindow.postMessage({ type, version: testsSupported ? protocolVersion : filesSupported ? 2 : 1 }, embedOrigin)
       return
     }
     postProgram(type, fallbackSource)
@@ -263,16 +267,19 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       runtimeReady = true
       inputAvailable = message.capabilities?.input === true
       filesSupported = message.capabilities?.files === true
+      testsSupported = message.capabilities?.tests === true
       frame.dataset.inputAvailable = String(inputAvailable)
       sendCommand(mode === "visual" ? "glpython:visualize" : "glpython:load")
       if (pendingRun) {
         sendCommand("glpython:run")
         pendingRun = false
       }
-      for (const id of ["visualize", "reset", "run", "run-menu"]) {
+      for (const id of ["visualize", "reset", "run", "run-menu", "tests"]) {
         const button = document.getElementById(`glpython-${id}-${sessionId}`)
         if (button) button.disabled = false
       }
+      const testsButton = document.getElementById(`glpython-tests-${sessionId}`)
+      if (testsButton) testsButton.hidden = !testsSupported || mode === "visual"
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       const minimumHeight = mode === "visual" ? 420 : 170
@@ -359,6 +366,14 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       visualizeButton.onclick = () => sendCommand("glpython:visualize")
     }
     if (resetButton) resetButton.onclick = () => sendCommand("glpython:reset")
+    // Runs the doctests of the file that would run; shown once the embed
+    // says it understands them.
+    const testsButton = document.getElementById(`glpython-tests-${sessionId}`)
+    if (testsButton) {
+      if (testsButton.textContent !== strings.tests) testsButton.textContent = strings.tests
+      if (testsButton.hidden !== (!testsSupported || mode === "visual")) testsButton.hidden = !testsSupported || mode === "visual"
+      testsButton.onclick = () => sendCommand("glpython:test")
+    }
     updateRunButton(readCodeFiles() ?? [])
     libraries.then(showLibraries)
     if (frame.dataset.glpythonInitialized === "true") return
@@ -386,6 +401,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       <span id="glpython-run-list-@0" role="menu" hidden style="position:absolute;top:100%;right:0;z-index:10;min-width:180px;margin-top:4px;padding:4px 0;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></span>
     </span>
     <button id="glpython-reset-@0" type="button" disabled>Reset runtime</button>
+    <button id="glpython-tests-@0" type="button" disabled hidden>Tests</button>
     <button id="glpython-visualize-@0" type="button" disabled>Visualize</button>
   </div>
   <div id="glpython-files-@0" hidden style="margin:4px 0 8px"></div>
@@ -529,6 +545,30 @@ Such a library is listed below the buttons with **View file** to read it. If it
 can't be loaded (e.g. HTTP 404, no network, or a server without CORS), the list
 says so and the program runs without it, so Python reports the missing module.
 Raw GitHub URLs work; URLs must not contain parentheses.
+
+## Tests
+
+The **Tests** button runs the examples written as doctests in the docstrings of
+the file that would run (with several files: the chosen one), as
+`python -m doctest` does. It shows how many examples passed and each failing
+example in doctest's own words (`Expected:` / `Got:`), with a button to
+visualize that example step by step. An example that only printed the expected
+value while the function returned `None` passes, as in doctest, with a hint
+that it probably should `return` instead.
+
+```python
+def quadrat(x):
+    """
+    Gibt das Quadrat von x zurück.
+
+    >>> quadrat(3)
+    9
+    >>> quadrat(-2)
+    4
+    """
+    return x * x
+```
+@GLPython.eval
 
 ## Box or substitution
 
