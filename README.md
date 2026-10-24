@@ -7,11 +7,11 @@ language: en
 comment:  Embed the glpython editor, execution visualizer, and turtle graphics
           in LiaScript courses.
 
-@GLPython.eval: @GLPython.embed(@uid,eval,@0)
+@GLPython.eval: @GLPython.embed(@uid,eval,@0,@1,@2,@3,@4,@5,@6,@7)
 
 @GLPython.turtle: @GLPython.embed(@uid,turtle)
 
-@GLPython.visual: @GLPython.embed(@uid,visual,@0)
+@GLPython.visual: @GLPython.embed(@uid,visual,@0,@1,@2,@3,@4,@5,@6,@7)
 
 @GLPython.embed
 <script>
@@ -44,10 +44,25 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   // Optional per block, separated by spaces in any order: "box" or
   // "substitution" presets the visualizer's mode, and URLs of shared Python
   // files to load as libraries, e.g. @GLPython.eval(box https://…/parser.py).
-  // Without the argument this is the literal "@2", which matches neither.
-  const options = "@2".split(/\s+/).filter(Boolean)
+  // LiaScript splits macro arguments at commas, so "features=run,repl" arrives
+  // as several arguments: they are joined back together here. Arguments that
+  // weren't given stay literal ("@3") and are left out.
+  const options = ["@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9"]
+    .filter((argument) => !/^@[0-9]$/.test(argument))
+    .join(",")
+    .split(/\s+/)
+    .filter(Boolean)
   const visualizerMode = options.find((option) => option === "box" || option === "substitution") ?? null
   const libraryUrls = options.filter((option) => /^https?:\/\//.test(option))
+  // "features=run,repl,…" shows only these parts (the course builds its
+  // profiles from it); without it, everything shows. "large" enlarges the
+  // code and the visualizer, e.g. for a demo on the projector.
+  const featureNames = ["run", "tests", "visualize", "reset", "repl", "export"]
+  const featuresOption = options.find((option) => option.startsWith("features="))
+  const requestedFeatures = featuresOption ? featuresOption.slice("features=".length).split(",").map((name) => name.trim()).filter(Boolean) : featureNames
+  const unknownFeatures = requestedFeatures.filter((name) => !featureNames.includes(name))
+  const hasFeature = (name) => requestedFeatures.includes(name)
+  const large = options.includes("large")
   // The course's own language (its "language:" header, which LiaScript sets
   // as the page's lang attribute), else the browser's, else English. Only the
   // primary subtag counts ("de-CH" -> "de"); an unsupported language such as
@@ -58,7 +73,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     .find((candidate) => ["de", "en"].includes(candidate)) ?? "en"
   const strings = {
     de: {
-      reset: "Laufzeit zurücksetzen",
+      run: "Ausführen",
+      reset: "Zurücksetzen",
       visualize: "Visualisieren",
       tests: "Tests",
       frameTitle: "glpython-Laufzeit",
@@ -74,9 +90,11 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       networkError: "Netzwerkfehler",
       timeout: "Zeitüberschreitung",
       filesUnsupported: "Diese glpython-Version kann nur eine Datei laden; es wird nur die gewählte Datei ausgeführt.",
+      unknownFeatures: (names) => `Unbekannt in features=: ${names} (möglich: ${featureNames.join(", ")})`,
     },
     en: {
-      reset: "Reset runtime",
+      run: "Run",
+      reset: "Reset",
       visualize: "Visualize",
       tests: "Tests",
       frameTitle: "glpython runtime",
@@ -92,6 +110,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       networkError: "network error",
       timeout: "timeout",
       filesUnsupported: "This glpython version can only load one file; only the chosen file runs.",
+      unknownFeatures: (names) => `Unknown in features=: ${names} (possible: ${featureNames.join(", ")})`,
     },
   }[language]
   const sessions = window.__glpythonSessions ??= new Map()
@@ -278,8 +297,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
         const button = document.getElementById(`glpython-${id}-${sessionId}`)
         if (button) button.disabled = false
       }
-      const testsButton = document.getElementById(`glpython-tests-${sessionId}`)
-      if (testsButton) testsButton.hidden = !testsSupported || mode === "visual"
+      attach()
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       const minimumHeight = mode === "visual" ? 420 : 170
@@ -289,31 +307,50 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }
   }
 
-  // The split button for blocks of several files: the icon runs the chosen
-  // file (the last one until another is chosen), the caret opens the list.
+  // Shows or hides an element through its display (the hidden attribute loses
+  // against a display set by CSS), writing only when it changes - attach()
+  // runs on every DOM change, and a write is one.
+  const setShown = (element, shown, display = "") => {
+    if (!element) return
+    const value = shown ? display : "none"
+    if (element.style.display !== value) element.style.display = value
+  }
+
+  // LiaScript's own run button (</>) of the block. It stays hidden: the macro's
+  // ▶ runs the block by clicking it, so LiaScript still saves edits and keeps
+  // its code history exactly as with its own button.
+  const liaScriptRunButton = () => codeBlock?.querySelector(".lia-code-control__action button") ?? null
+  const runThroughLiaScript = () => {
+    const button = liaScriptRunButton()
+    if (button) button.click()
+    else run()
+  }
+
+  // The run button (▶ Run), and for blocks of several files its ▾ menu: ▶ runs
+  // the chosen file (the last one until another is chosen).
   const updateRunButton = (codeFiles) => {
     const split = document.getElementById(`glpython-run-split-${sessionId}`)
     const runButton = document.getElementById(`glpython-run-${sessionId}`)
     const menuButton = document.getElementById(`glpython-run-menu-${sessionId}`)
     const menu = document.getElementById(`glpython-run-list-${sessionId}`)
     if (!split || !runButton || !menuButton || !menu) return
-    // Toggled through display, not the hidden attribute: the split button's
-    // inline-flex display would override hidden.
-    const show = mode !== "visual" && codeFiles.length > 1
-    const display = show ? "inline-flex" : "none"
-    if (split.style.display !== display) split.style.display = display
+    runButton.onclick = runThroughLiaScript
+    // The run button whenever "run" is on; its ▾ menu only for several files.
+    const show = mode !== "visual" && hasFeature("run")
+    setShown(split, show, "inline-flex")
     if (!show) return
-    const mainFile = codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
-    const title = strings.runFile(mainFile)
-    if (runButton.title !== title) {
-      runButton.title = title
-      runButton.setAttribute("aria-label", title)
-    }
+    const severalFiles = codeFiles.length > 1
+    setShown(menuButton, severalFiles)
+    const label = `▶ ${strings.run}`
+    if (runButton.textContent !== label) runButton.textContent = label
+    const mainFile = codeFiles.length === 0 ? null : codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
+    const title = severalFiles && mainFile ? strings.runFile(mainFile) : strings.run
+    if (runButton.title !== title) runButton.title = title
+    if (!severalFiles) return
     if (menuButton.title !== strings.chooseFile) {
       menuButton.title = strings.chooseFile
       menuButton.setAttribute("aria-label", strings.chooseFile)
     }
-    runButton.onclick = () => run()
     menuButton.onclick = () => {
       menu.hidden = !menu.hidden
       menuButton.setAttribute("aria-expanded", String(!menu.hidden))
@@ -356,13 +393,15 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
     ) ?? null
     if (codeBlock && codeBlock.hidden !== (mode === "visual")) codeBlock.hidden = mode === "visual"
-    if (controls) controls.style.display = mode === "visual" ? "none" : "flex"
+    setShown(liaScriptRunButton(), false)
+    setShown(controls, mode !== "visual", "flex")
     // Only when it differs: attach() runs on every DOM change (see the
     // MutationObserver below), and replacing a text is such a change.
     if (resetButton && resetButton.textContent !== strings.reset) resetButton.textContent = strings.reset
+    setShown(resetButton, hasFeature("reset"))
     if (visualizeButton) {
       if (visualizeButton.textContent !== strings.visualize) visualizeButton.textContent = strings.visualize
-      visualizeButton.hidden = mode !== "eval"
+      setShown(visualizeButton, mode === "eval" && hasFeature("visualize"))
       visualizeButton.onclick = () => sendCommand("glpython:visualize")
     }
     if (resetButton) resetButton.onclick = () => sendCommand("glpython:reset")
@@ -371,16 +410,31 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     const testsButton = document.getElementById(`glpython-tests-${sessionId}`)
     if (testsButton) {
       if (testsButton.textContent !== strings.tests) testsButton.textContent = strings.tests
-      if (testsButton.hidden !== (!testsSupported || mode === "visual")) testsButton.hidden = !testsSupported || mode === "visual"
+      setShown(testsButton, testsSupported && mode !== "visual" && hasFeature("tests"))
       testsButton.onclick = () => sendCommand("glpython:test")
     }
+    // An unknown name in features= is shown instead of ignored silently.
+    const warning = document.getElementById(`glpython-warning-${sessionId}`)
+    const warningText = unknownFeatures.length > 0 ? strings.unknownFeatures(unknownFeatures.join(", ")) : ""
+    if (warning && warning.textContent !== warningText) warning.textContent = warningText
+    setShown(warning, warningText !== "")
     updateRunButton(readCodeFiles() ?? [])
     libraries.then(showLibraries)
     if (frame.dataset.glpythonInitialized === "true") return
     frame.dataset.glpythonInitialized = "true"
     if (mode === "visual") frame.style.height = "420px"
     frame.title = `${strings.frameTitle} (${mode})`
-    frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}&lang=${language}${visualizerMode ? `&visualizer=${visualizerMode}` : ""}`
+    const query = new URLSearchParams({ parentOrigin: window.location.origin, mode, lang: language })
+    if (visualizerMode) query.set("visualizer", visualizerMode)
+    if (featuresOption) query.set("features", requestedFeatures.filter((name) => featureNames.includes(name)).join(","))
+    // "large": the visualizer at least 60% of the window - the slide in
+    // LiaScript's presentation mode - passed in pixels, since the iframe's
+    // own height follows its content.
+    if (large) {
+      query.set("size", "large")
+      query.set("visualizerHeight", String(Math.round(window.innerHeight * 0.6)))
+    }
+    frame.src = `${embedUrl}?${query}`
   }
 
   const session = { attach, run }
@@ -393,26 +447,27 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 "LIA: wait"
 </script>
 
-<div class="glpython-embed">
-  <div id="glpython-controls-@0" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin:8px 0">
+<div class="glpython-embed" style="border:1px solid rgba(0,0,0,.18);border-radius:4px;overflow:hidden">
+  <div id="glpython-controls-@0" class="glp-buttons" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;align-items:center;padding:8px">
     <span id="glpython-run-split-@0" style="position:relative;display:none">
-      <button id="glpython-run-@0" type="button" disabled style="border-top-right-radius:0;border-bottom-right-radius:0;padding-left:12px;padding-right:10px">▶</button>
-      <button id="glpython-run-menu-@0" type="button" disabled aria-haspopup="true" aria-expanded="false" style="border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.15);padding-left:6px;padding-right:8px">▾</button>
-      <span id="glpython-run-list-@0" role="menu" hidden style="position:absolute;top:100%;right:0;z-index:10;min-width:180px;margin-top:4px;padding:4px 0;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></span>
+      <button id="glpython-run-@0" class="glp-button glp-button--primary glp-button--run" type="button" disabled style="border-top-right-radius:0;border-bottom-right-radius:0">▶ Run</button>
+      <button id="glpython-run-menu-@0" class="glp-button glp-button--run-menu" type="button" disabled aria-haspopup="true" aria-expanded="false" style="display:none;border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.15);padding-left:6px;padding-right:8px">▾</button>
+      <span id="glpython-run-list-@0" role="menu" hidden style="position:absolute;top:100%;left:0;z-index:10;min-width:180px;margin-top:4px;padding:4px 0;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></span>
     </span>
-    <button id="glpython-reset-@0" type="button" disabled>Reset runtime</button>
-    <button id="glpython-tests-@0" type="button" disabled hidden>Tests</button>
-    <button id="glpython-visualize-@0" type="button" disabled>Visualize</button>
+    <button id="glpython-tests-@0" class="glp-button glp-button--tests" type="button" disabled style="display:none">Tests</button>
+    <button id="glpython-visualize-@0" class="glp-button glp-button--visualize" type="button" disabled>Visualize</button>
+    <button id="glpython-reset-@0" class="glp-button glp-button--reset" type="button" disabled>Reset</button>
   </div>
-  <div id="glpython-files-@0" hidden style="margin:4px 0 8px"></div>
-  <p id="glpython-error-@0" class="glpython-error" hidden></p>
+  <p id="glpython-warning-@0" class="glpython-warning" style="display:none;margin:0;padding:0 8px 8px;color:#8a5a1f"></p>
+  <div id="glpython-files-@0" hidden style="padding:0 8px 8px"></div>
+  <p id="glpython-error-@0" class="glpython-error" hidden style="margin:0;padding:0 8px 8px"></p>
   <iframe
     id="glpython-frame-@0"
     title="glpython @1 runtime"
     loading="lazy"
     referrerpolicy="strict-origin"
     allow="clipboard-read; clipboard-write"
-    style="display:block;width:100%;height:220px;border:0;border-radius:8px;background:#f4f1e9"
+    style="display:block;width:100%;height:220px;border:0;border-radius:0;background:#f4f1e9"
   ></iframe>
 </div>
 @end
@@ -451,9 +506,11 @@ sys.version
 @GLPython.eval
 
 LiaScript owns the visible editor and preserves its source through its course and PWA
-state. LiaScript's native Execute action runs the current source through glpython. The
-glpython runtime provides output and the step-by-step visualizer without mounting a
-second editor. It does not reserve space for turtle graphics.
+state. The **▶ Run** button below the block runs the current source through glpython:
+it triggers LiaScript's own run action, whose `</>` button is hidden, so LiaScript still
+saves edits and keeps its code history (the version arrows stay). The glpython runtime
+provides output and the step-by-step visualizer without mounting a second editor. It
+does not reserve space for turtle graphics.
 
 ## State and navigation
 
@@ -465,7 +522,7 @@ official macro's behavior.
 Each macro has an isolated runtime iframe. If LiaScript recreates that iframe, the
 macro reattaches a clean worker and reloads the current LiaScript source; Python
 globals, output, turtle state, and visualization position are intentionally not
-serialized. **Reset runtime** also terminates the current worker and creates a clean
+serialized. **Reset** also terminates the current worker and creates a clean
 one. The post-run REPL below the output uses this per-block worker lifecycle: Run
 keeps the program's namespace while the worker survives, and Reset discards it
 without changing LiaScript's source.
@@ -517,9 +574,8 @@ print(doppelt(21))
 ```
 @GLPython.eval
 
-The **last** file runs. A split button next to the other buttons (▶ ▾) runs it,
-and its ▾ menu chooses another file to run; LiaScript's own Execute action and
-**Visualize** follow that choice. Only the file that runs is visualized step by
+The **last** file runs. **▶ Run** runs it, and for several files it gets a ▾ menu
+that chooses another file to run; **Visualize** and **Tests** follow that choice. Only the file that runs is visualized step by
 step; imported files run as a black box.
 
 Shared files that live elsewhere, e.g. a parser used in several lessons, are
@@ -587,6 +643,37 @@ quadrat(7)
 
 Without an argument the block uses the mode the learner last chose, and
 substitution at first.
+
+## Buttons and profiles
+
+Below each block sits one row of buttons, left to right **▶ Run · Tests ·
+Visualize · Reset** («Ausführen · Tests · Visualisieren · Zurücksetzen» in German
+courses), framed together with the output panel. Every button has a text label
+and the classes `glp-button` plus one per function (`glp-button--run`,
+`glp-button--tests`, `glp-button--visualize`, `glp-button--reset`); ▶ Run also
+has `glp-button--primary`, its ▾ menu `glp-button--run-menu`. The row has
+`glp-buttons`, so a course can restyle all of it with `@style`.
+
+`features=` in the macro's argument shows only the listed parts: `run`, `tests`,
+`visualize`, `reset`, `repl` (the input line below the output) and `export` (the
+visualizer's «→-Kette kopieren»). Without it, everything shows. Hidden parts are
+not rendered at all. An unknown name shows a short warning below the buttons.
+`large` makes the code 20px (line height 1.6) and the visualizer at least 60% of
+the window, e.g. for the projector in presentation mode.
+
+A course builds its own profiles from these options as macros in its header,
+passing `@0` on so a block can add more options (a mode or library URLs):
+
+```text
+@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset @0)
+@Code.rezept:   @GLPython.eval(features=run,repl,visualize,tests,reset @0)
+@Code.pruefung: @GLPython.eval(features=run,reset @0)
+@Code.demo:     @GLPython.visual(large @0)
+```
+
+All options can be combined in any order, separated by spaces; LiaScript's
+commas between macro arguments are fine. `examples/profiles.md` shows each of
+these profiles.
 
 ## Language
 
