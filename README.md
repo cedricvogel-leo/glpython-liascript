@@ -36,14 +36,18 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
 <script run-once>
 (() => {
-  const protocolVersion = 1
+  const protocolVersion = 2
   const embedOrigin = "https://cedricvogel-leo.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const sessionId = "@0"
   const mode = "@1"
-  // Optional per block: @GLPython.eval(box) or @GLPython.eval(substitution)
-  // presets the visualizer's mode; without it this is the literal "@2".
-  const visualizerMode = ["box", "substitution"].includes("@2") ? "@2" : null
+  // Optional per block, separated by spaces in any order: "box" or
+  // "substitution" presets the visualizer's mode, and URLs of shared Python
+  // files to load as libraries, e.g. @GLPython.eval(box https://…/parser.py).
+  // Without the argument this is the literal "@2", which matches neither.
+  const options = "@2".split(/\s+/).filter(Boolean)
+  const visualizerMode = options.find((option) => option === "box" || option === "substitution") ?? null
+  const libraryUrls = options.filter((option) => /^https?:\/\//.test(option))
   // The course's own language (its "language:" header, which LiaScript sets
   // as the page's lang attribute), else the browser's, else English. Only the
   // primary subtag counts ("de-CH" -> "de"); an unsupported language such as
@@ -60,6 +64,15 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       sourceUnreadable: "Der LiaScript-Quelltext konnte nicht gelesen werden.",
       inputUnavailable: "Python-input() ist in dieser LiaScript-Einbettung nicht verfügbar.",
       embedError: "Die glpython-Einbettung hat einen Fehler gemeldet.",
+      runFile: (name) => `${name} ausführen`,
+      chooseFile: "Datei zum Ausführen wählen",
+      library: "Bibliothek",
+      viewFile: "Datei ansehen",
+      hideFile: "Datei ausblenden",
+      libraryFailed: (name, reason) => `Die Bibliothek ${name} konnte nicht geladen werden (${reason}).`,
+      networkError: "Netzwerkfehler",
+      timeout: "Zeitüberschreitung",
+      filesUnsupported: "Diese glpython-Version kann nur eine Datei laden; es wird nur die gewählte Datei ausgeführt.",
     },
     en: {
       reset: "Reset runtime",
@@ -68,6 +81,15 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       sourceUnreadable: "The LiaScript source block could not be read.",
       inputUnavailable: "Python input() is unavailable in this LiaScript embedding context.",
       embedError: "The glpython embed reported an error.",
+      runFile: (name) => `Run ${name}`,
+      chooseFile: "Choose the file to run",
+      library: "Library",
+      viewFile: "View file",
+      hideFile: "Hide file",
+      libraryFailed: (name, reason) => `Could not load library ${name} (${reason}).`,
+      networkError: "network error",
+      timeout: "timeout",
+      filesUnsupported: "This glpython version can only load one file; only the chosen file runs.",
     },
   }[language]
   const sessions = window.__glpythonSessions ??= new Map()
@@ -79,10 +101,13 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
   let frame = null
   let error = null
-  let nativeEditor = null
+  let codeBlock = null
   let inputAvailable = false
+  let filesSupported = false
   let runtimeReady = false
-  let pendingRun = null
+  let pendingRun = false
+  // The code file chosen in the split button's menu; null runs the last one.
+  let chosenFile = null
 
   const showError = (message) => {
     if (!error) return
@@ -90,14 +115,88 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     error.hidden = false
   }
 
-  const readSource = () => {
-    const source = nativeEditor?.value
-    if (typeof source !== "string") {
-      showError(strings.sourceUnreadable)
-      return null
-    }
-    return source
+  // A block's file name (its header, e.g. ```python parser.py) as a Python
+  // module file, so "from parser import parse" finds it.
+  const moduleFileName = (name, fallback) => {
+    const stem = (name || "").trim().replace(/\.py$/i, "").replace(/[^A-Za-z0-9_]/g, "_")
+    if (!stem) return fallback
+    return `${/^[0-9]/.test(stem) ? "_" : ""}${stem}.py`
   }
+
+  // Every code block right before the iframe (LiaScript groups consecutive
+  // blocks into one project), with its file name and its current text.
+  const readCodeFiles = () => {
+    const editors = [...(codeBlock?.querySelectorAll("lia-editor") ?? [])]
+    const files = editors.map((editor, index) => ({
+      path: moduleFileName(
+        editor.closest(".lia-accordion__item")?.querySelector(".lia-accordion__headline")?.textContent,
+        editors.length === 1 ? "main.py" : `datei${index + 1}.py`,
+      ),
+      source: editor.value,
+    }))
+    if (files.some((file) => typeof file.source !== "string")) return null
+    return files.filter((file, index) => files.findIndex((other) => other.path === file.path) === index)
+  }
+
+  // Shared files loaded by URL, fetched once per block. A file that can't be
+  // loaded is reported and left out, so Python's own ModuleNotFoundError
+  // follows when the program imports it.
+  const fileNameOfUrl = (url) => decodeURIComponent(new URL(url).pathname.split("/").pop() || "")
+  const libraries = Promise.all(libraryUrls.map(async (url) => {
+    const path = moduleFileName(fileNameOfUrl(url), "bibliothek.py")
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 15000)
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      if (!response.ok) return { path, url, failure: `HTTP ${response.status}` }
+      return { path, url, source: await response.text() }
+    } catch (fetchError) {
+      return { path, url, failure: fetchError?.name === "AbortError" ? strings.timeout : strings.networkError }
+    } finally {
+      window.clearTimeout(timer)
+    }
+  }))
+
+  // Lists the libraries below the buttons: each can be opened read-only, and
+  // one that failed to load says so.
+  const showLibraries = (list) => {
+    const container = document.getElementById(`glpython-files-${sessionId}`)
+    if (!container || container.dataset.filled === "true" || list.length === 0) return
+    container.dataset.filled = "true"
+    container.hidden = false
+    for (const library of list) {
+      const row = document.createElement("div")
+      row.style.margin = "4px 0"
+      const label = document.createElement("span")
+      label.textContent = `${strings.library}: `
+      const name = document.createElement("code")
+      name.textContent = library.path
+      row.append(label, name)
+      if (library.failure) {
+        const failure = document.createElement("span")
+        failure.className = "glpython-error"
+        failure.style.color = "#b23a3a"
+        failure.textContent = ` ${strings.libraryFailed(library.path, library.failure)}`
+        row.append(failure)
+      } else {
+        const toggle = document.createElement("button")
+        toggle.type = "button"
+        toggle.textContent = strings.viewFile
+        toggle.style.marginLeft = "8px"
+        const view = document.createElement("pre")
+        view.hidden = true
+        view.textContent = library.source
+        view.style.cssText = "max-height:320px;overflow:auto;margin:6px 0;padding:8px;background:#f6f6f3;border:1px solid #ddd;border-radius:6px"
+        toggle.onclick = () => {
+          view.hidden = !view.hidden
+          toggle.textContent = view.hidden ? strings.viewFile : strings.hideFile
+        }
+        row.append(toggle, view)
+      }
+      container.append(row)
+    }
+  }
+  libraries.then(showLibraries)
 
   const reportInputCapability = (source) => {
     if (!error) return
@@ -108,45 +207,72 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }
   }
 
-  const postSource = (type, source) => {
-    if (!frame?.contentWindow) return
-    reportInputCapability(source)
-    frame.contentWindow.postMessage({
-      type,
-      version: protocolVersion,
-      source,
-      mode,
-    }, embedOrigin)
+  // The program to send: the libraries plus the block's files, and which one
+  // runs - the chosen file, else the last block (materials put the file to
+  // run last). Without readable blocks, LiaScript's own text of the block.
+  const readProgram = async (fallbackSource) => {
+    const codeFiles = readCodeFiles() ?? (typeof fallbackSource === "string" ? [{ path: "main.py", source: fallbackSource }] : null)
+    if (!codeFiles || codeFiles.length === 0) {
+      showError(strings.sourceUnreadable)
+      return null
+    }
+    const mainFile = codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
+    const loaded = (await libraries).filter((library) => library.source !== undefined && !codeFiles.some((file) => file.path === library.path))
+    return { mainFile, files: [...loaded.map(({ path, source }) => ({ path, source })), ...codeFiles] }
   }
 
-  const sendCommand = (type) => {
+  const postProgram = async (type, fallbackSource) => {
+    const program = await readProgram(fallbackSource)
+    if (!program || !frame?.contentWindow) return
+    const main = program.files.find((file) => file.path === program.mainFile)
+    reportInputCapability(main.source)
+    if (filesSupported) {
+      frame.contentWindow.postMessage({ type, version: protocolVersion, source: main.source, mode, files: program.files, mainFile: program.mainFile }, embedOrigin)
+    } else {
+      if (program.files.length > 1) showError(strings.filesUnsupported)
+      frame.contentWindow.postMessage({ type, version: 1, source: main.source, mode }, embedOrigin)
+    }
+  }
+
+  const sendCommand = (type, fallbackSource) => {
     if (!frame?.contentWindow) return
     if (type === "glpython:reset") {
-      frame.contentWindow.postMessage({ type, version: protocolVersion }, embedOrigin)
+      frame.contentWindow.postMessage({ type, version: filesSupported ? protocolVersion : 1 }, embedOrigin)
       return
     }
-    const source = readSource()
-    if (source !== null) postSource(type, source)
+    postProgram(type, fallbackSource)
+  }
+
+  const run = (fallbackSource) => {
+    attach()
+    if (runtimeReady) {
+      sendCommand("glpython:run", fallbackSource)
+    } else {
+      pendingRun = true
+    }
   }
 
   const onMessage = (event) => {
     if (!frame || event.origin !== embedOrigin || event.source !== frame.contentWindow) return
     const message = event.data
-    if (!message || message.version !== protocolVersion) return
+    // The embed answers in the version this macro last used (1 until it knows
+    // the embed understands version 2).
+    if (!message || (message.version !== 1 && message.version !== protocolVersion)) return
 
     if (message.type === "glpython:ready") {
       runtimeReady = true
       inputAvailable = message.capabilities?.input === true
+      filesSupported = message.capabilities?.files === true
       frame.dataset.inputAvailable = String(inputAvailable)
       sendCommand(mode === "visual" ? "glpython:visualize" : "glpython:load")
-      if (pendingRun !== null) {
-        postSource("glpython:run", pendingRun)
-        pendingRun = null
+      if (pendingRun) {
+        sendCommand("glpython:run")
+        pendingRun = false
       }
-      const visualizeButton = document.getElementById(`glpython-visualize-${sessionId}`)
-      const resetButton = document.getElementById(`glpython-reset-${sessionId}`)
-      if (visualizeButton) visualizeButton.disabled = false
-      if (resetButton) resetButton.disabled = false
+      for (const id of ["visualize", "reset", "run", "run-menu"]) {
+        const button = document.getElementById(`glpython-${id}-${sessionId}`)
+        if (button) button.disabled = false
+      }
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       const minimumHeight = mode === "visual" ? 420 : 170
@@ -154,6 +280,57 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     } else if (message.type === "glpython:error") {
       showError(message.message || strings.embedError)
     }
+  }
+
+  // The split button for blocks of several files: the icon runs the chosen
+  // file (the last one until another is chosen), the caret opens the list.
+  const updateRunButton = (codeFiles) => {
+    const split = document.getElementById(`glpython-run-split-${sessionId}`)
+    const runButton = document.getElementById(`glpython-run-${sessionId}`)
+    const menuButton = document.getElementById(`glpython-run-menu-${sessionId}`)
+    const menu = document.getElementById(`glpython-run-list-${sessionId}`)
+    if (!split || !runButton || !menuButton || !menu) return
+    // Toggled through display, not the hidden attribute: the split button's
+    // inline-flex display would override hidden.
+    const show = mode !== "visual" && codeFiles.length > 1
+    const display = show ? "inline-flex" : "none"
+    if (split.style.display !== display) split.style.display = display
+    if (!show) return
+    const mainFile = codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
+    const title = strings.runFile(mainFile)
+    if (runButton.title !== title) {
+      runButton.title = title
+      runButton.setAttribute("aria-label", title)
+    }
+    if (menuButton.title !== strings.chooseFile) {
+      menuButton.title = strings.chooseFile
+      menuButton.setAttribute("aria-label", strings.chooseFile)
+    }
+    runButton.onclick = () => run()
+    menuButton.onclick = () => {
+      menu.hidden = !menu.hidden
+      menuButton.setAttribute("aria-expanded", String(!menu.hidden))
+    }
+    const names = codeFiles.map((file) => file.path).join("\n")
+    if (menu.dataset.files === names && menu.dataset.chosen === mainFile) return
+    menu.dataset.files = names
+    menu.dataset.chosen = mainFile
+    menu.replaceChildren(...codeFiles.map((file) => {
+      const item = document.createElement("button")
+      item.type = "button"
+      item.setAttribute("role", "menuitemradio")
+      item.setAttribute("aria-checked", String(file.path === mainFile))
+      item.textContent = `${file.path === mainFile ? "✓ " : ""}${file.path}`
+      item.style.cssText = "display:block;width:100%;padding:6px 12px;border:0;background:none;text-align:left;font:inherit;cursor:pointer"
+      item.onclick = () => {
+        chosenFile = file.path
+        menu.hidden = true
+        menuButton.setAttribute("aria-expanded", "false")
+        updateRunButton(codeFiles)
+        if (runtimeReady) sendCommand("glpython:load")
+      }
+      return item
+    }))
   }
 
   const attach = () => {
@@ -168,11 +345,10 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     const codeBlocks = [
       ...(frame.closest(".lia-slide__content")?.querySelectorAll(".lia-code--block") ?? []),
     ]
-    const nativeCodeBlock = codeBlocks.findLast((block) =>
+    codeBlock = codeBlocks.findLast((block) =>
       block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
-    )
-    nativeEditor = nativeCodeBlock?.querySelector("lia-editor") ?? null
-    if (nativeCodeBlock) nativeCodeBlock.hidden = mode === "visual"
+    ) ?? null
+    if (codeBlock && codeBlock.hidden !== (mode === "visual")) codeBlock.hidden = mode === "visual"
     if (controls) controls.style.display = mode === "visual" ? "none" : "flex"
     // Only when it differs: attach() runs on every DOM change (see the
     // MutationObserver below), and replacing a text is such a change.
@@ -183,6 +359,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       visualizeButton.onclick = () => sendCommand("glpython:visualize")
     }
     if (resetButton) resetButton.onclick = () => sendCommand("glpython:reset")
+    updateRunButton(readCodeFiles() ?? [])
+    libraries.then(showLibraries)
     if (frame.dataset.glpythonInitialized === "true") return
     frame.dataset.glpythonInitialized = "true"
     if (mode === "visual") frame.style.height = "420px"
@@ -190,17 +368,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}&lang=${language}${visualizerMode ? `&visualizer=${visualizerMode}` : ""}`
   }
 
-  const session = {
-    attach,
-    run(source) {
-      attach()
-      if (runtimeReady) {
-        postSource("glpython:run", source)
-      } else {
-        pendingRun = source
-      }
-    },
-  }
+  const session = { attach, run }
   sessions.set(sessionId, session)
   window.addEventListener("message", onMessage)
   new MutationObserver(attach).observe(document.body, { childList: true, subtree: true })
@@ -211,10 +379,16 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 </script>
 
 <div class="glpython-embed">
-  <div id="glpython-controls-@0" style="display:flex;gap:8px;justify-content:flex-end;margin:8px 0">
+  <div id="glpython-controls-@0" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin:8px 0">
+    <span id="glpython-run-split-@0" style="position:relative;display:none">
+      <button id="glpython-run-@0" type="button" disabled style="border-top-right-radius:0;border-bottom-right-radius:0;padding-left:12px;padding-right:10px">▶</button>
+      <button id="glpython-run-menu-@0" type="button" disabled aria-haspopup="true" aria-expanded="false" style="border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.15);padding-left:6px;padding-right:8px">▾</button>
+      <span id="glpython-run-list-@0" role="menu" hidden style="position:absolute;top:100%;right:0;z-index:10;min-width:180px;margin-top:4px;padding:4px 0;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></span>
+    </span>
     <button id="glpython-reset-@0" type="button" disabled>Reset runtime</button>
     <button id="glpython-visualize-@0" type="button" disabled>Visualize</button>
   </div>
+  <div id="glpython-files-@0" hidden style="margin:4px 0 8px"></div>
   <p id="glpython-error-@0" class="glpython-error" hidden></p>
   <iframe
     id="glpython-frame-@0"
@@ -308,6 +482,53 @@ for value in range(1, 5):
 print(total)
 ```
 @GLPython.visual
+
+## Several files
+
+Put consecutive code blocks with a file name in their header before the macro;
+LiaScript shows them as one project, and glpython loads all of them, so one file
+can import another. Start a file's name with `-` to show it collapsed (and `+`
+to show it open):
+
+```python -helpers.py
+def doppelt(x):
+    return 2 * x
+```
+```python +main.py
+from helpers import doppelt
+
+print(doppelt(21))
+```
+@GLPython.eval
+
+The **last** file runs. A split button next to the other buttons (▶ ▾) runs it,
+and its ▾ menu chooses another file to run; LiaScript's own Execute action and
+**Visualize** follow that choice. Only the file that runs is visualized step by
+step; imported files run as a black box.
+
+Shared files that live elsewhere, e.g. a parser used in several lessons, are
+loaded by URL: list them in the macro's argument, separated by spaces and
+together with `box`/`substitution` if needed. The file name of the URL is the
+module name, e.g. for `from parser import parse`:
+
+```text
+@GLPython.eval(https://raw.githubusercontent.com/<user>/<repo>/main/materials/00-auswerter/parser.py)
+@GLPython.eval(box https://…/parser.py https://…/auswerter.py)
+```
+
+A working example, loading Python's own `colorsys.py` from GitHub:
+
+```python
+from colorsys import rgb_to_hsv
+
+print(rgb_to_hsv(1, 0, 0))
+```
+@GLPython.eval(https://raw.githubusercontent.com/python/cpython/main/Lib/colorsys.py)
+
+Such a library is listed below the buttons with **View file** to read it. If it
+can't be loaded (e.g. HTTP 404, no network, or a server without CORS), the list
+says so and the program runs without it, so Python reports the missing module.
+Raw GitHub URLs work; URLs must not contain parentheses.
 
 ## Box or substitution
 
