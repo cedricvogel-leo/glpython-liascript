@@ -19,7 +19,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const session = window.__glpythonSessions?.get("@0")
   const source = "@'input"
   if (!session) {
-    const message = document.documentElement.lang.toLowerCase().startsWith("de")
+    const primary = (tag) => (tag || "").toLowerCase().split("-")[0]
+    const german = [primary(document.documentElement.lang), primary(navigator.language)].find((language) => ["de", "en"].includes(language)) === "de"
+    const message = german
       ? "Die glpython-Laufzeit ist noch nicht bereit."
       : "The glpython runtime is not ready."
     send.lia(`HTML: <pre style='color:red'>${message}</pre>`)
@@ -42,9 +44,14 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   // Optional per block: @GLPython.eval(box) or @GLPython.eval(substitution)
   // presets the visualizer's mode; without it this is the literal "@2".
   const visualizerMode = ["box", "substitution"].includes("@2") ? "@2" : null
-  // The course's own language (its "language:" header), which LiaScript sets
-  // as the page's lang attribute. German for "de"/"de-CH" etc., else English.
-  const language = document.documentElement.lang.toLowerCase().startsWith("de") ? "de" : "en"
+  // The course's own language (its "language:" header, which LiaScript sets
+  // as the page's lang attribute), else the browser's, else English. Only the
+  // primary subtag counts ("de-CH" -> "de"); an unsupported language such as
+  // "fr" falls through to the next step. A course without a header counts as
+  // English, as LiaScript reports it.
+  const primaryLanguage = (tag) => (tag || "").toLowerCase().split("-")[0]
+  const language = [primaryLanguage(document.documentElement.lang), primaryLanguage(navigator.language)]
+    .find((candidate) => ["de", "en"].includes(candidate)) ?? "en"
   const strings = {
     de: {
       reset: "Laufzeit zurücksetzen",
@@ -323,8 +330,11 @@ substitution at first.
 ## Language
 
 The buttons and the embed follow the course's `language:` header: German for
-`de` (including regional variants such as `de-CH`), English for anything else.
-Python's own error messages are never translated.
+`de` (including regional variants such as `de-CH`), English for `en`. For a
+language glpython doesn't support (e.g. `fr`), they follow the browser's
+language instead, and English if that isn't supported either. LiaScript reports
+a course without a `language:` header as English, so such a course is shown in
+English. Python's own values and error messages are never translated.
 
 ## Hosting and compatibility
 
