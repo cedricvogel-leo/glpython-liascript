@@ -7,11 +7,11 @@ language: en
 comment:  Embed the glpython editor, execution visualizer, and turtle graphics
           in LiaScript courses.
 
-@GLPython.eval: @GLPython.embed(@uid,eval)
+@GLPython.eval: @GLPython.embed(@uid,eval,@0)
 
 @GLPython.turtle: @GLPython.embed(@uid,turtle)
 
-@GLPython.visual: @GLPython.embed(@uid,visual)
+@GLPython.visual: @GLPython.embed(@uid,visual,@0)
 
 @GLPython.embed
 <script>
@@ -19,7 +19,10 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const session = window.__glpythonSessions?.get("@0")
   const source = "@'input"
   if (!session) {
-    send.lia("HTML: <pre style='color:red'>The glpython runtime is not ready.</pre>")
+    const message = document.documentElement.lang.toLowerCase().startsWith("de")
+      ? "Die glpython-Laufzeit ist noch nicht bereit."
+      : "The glpython runtime is not ready."
+    send.lia(`HTML: <pre style='color:red'>${message}</pre>`)
     return
   }
   session.run(source)
@@ -36,6 +39,30 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const sessionId = "@0"
   const mode = "@1"
+  // Optional per block: @GLPython.eval(box) or @GLPython.eval(substitution)
+  // presets the visualizer's mode; without it this is the literal "@2".
+  const visualizerMode = ["box", "substitution"].includes("@2") ? "@2" : null
+  // The course's own language (its "language:" header), which LiaScript sets
+  // as the page's lang attribute. German for "de"/"de-CH" etc., else English.
+  const language = document.documentElement.lang.toLowerCase().startsWith("de") ? "de" : "en"
+  const strings = {
+    de: {
+      reset: "Laufzeit zurücksetzen",
+      visualize: "Visualisieren",
+      frameTitle: "glpython-Laufzeit",
+      sourceUnreadable: "Der LiaScript-Quelltext konnte nicht gelesen werden.",
+      inputUnavailable: "Python-input() ist in dieser LiaScript-Einbettung nicht verfügbar.",
+      embedError: "Die glpython-Einbettung hat einen Fehler gemeldet.",
+    },
+    en: {
+      reset: "Reset runtime",
+      visualize: "Visualize",
+      frameTitle: "glpython runtime",
+      sourceUnreadable: "The LiaScript source block could not be read.",
+      inputUnavailable: "Python input() is unavailable in this LiaScript embedding context.",
+      embedError: "The glpython embed reported an error.",
+    },
+  }[language]
   const sessions = window.__glpythonSessions ??= new Map()
   const existingSession = sessions.get(sessionId)
   if (existingSession) {
@@ -59,7 +86,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const readSource = () => {
     const source = nativeEditor?.value
     if (typeof source !== "string") {
-      showError("The LiaScript source block could not be read.")
+      showError(strings.sourceUnreadable)
       return null
     }
     return source
@@ -68,7 +95,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const reportInputCapability = (source) => {
     if (!error) return
     if (!inputAvailable && /(^|[^\w])input\s*\(/.test(source)) {
-      showError("Python input() is unavailable in this LiaScript embedding context.")
+      showError(strings.inputUnavailable)
     } else {
       error.hidden = true
     }
@@ -118,7 +145,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       const minimumHeight = mode === "visual" ? 420 : 170
       frame.style.height = `${Math.max(minimumHeight, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
-      showError(message.message || "The glpython embed reported an error.")
+      showError(message.message || strings.embedError)
     }
   }
 
@@ -140,7 +167,11 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     nativeEditor = nativeCodeBlock?.querySelector("lia-editor") ?? null
     if (nativeCodeBlock) nativeCodeBlock.hidden = mode === "visual"
     if (controls) controls.style.display = mode === "visual" ? "none" : "flex"
+    // Only when it differs: attach() runs on every DOM change (see the
+    // MutationObserver below), and replacing a text is such a change.
+    if (resetButton && resetButton.textContent !== strings.reset) resetButton.textContent = strings.reset
     if (visualizeButton) {
+      if (visualizeButton.textContent !== strings.visualize) visualizeButton.textContent = strings.visualize
       visualizeButton.hidden = mode !== "eval"
       visualizeButton.onclick = () => sendCommand("glpython:visualize")
     }
@@ -148,7 +179,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (frame.dataset.glpythonInitialized === "true") return
     frame.dataset.glpythonInitialized = "true"
     if (mode === "visual") frame.style.height = "420px"
-    frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}`
+    frame.title = `${strings.frameTitle} (${mode})`
+    frame.src = `${embedUrl}?parentOrigin=${encodeURIComponent(window.location.origin)}&mode=${mode}&lang=${language}${visualizerMode ? `&visualizer=${visualizerMode}` : ""}`
   }
 
   const session = {
@@ -237,8 +269,8 @@ Each macro has an isolated runtime iframe. If LiaScript recreates that iframe, t
 macro reattaches a clean worker and reloads the current LiaScript source; Python
 globals, output, turtle state, and visualization position are intentionally not
 serialized. **Reset runtime** also terminates the current worker and creates a clean
-one. This per-block worker lifecycle is the boundary a future post-run REPL will use:
-Run can retain a namespace while the worker survives, and Reset can discard it
+one. The post-run REPL below the output uses this per-block worker lifecycle: Run
+keeps the program's namespace while the worker survives, and Reset discards it
 without changing LiaScript's source.
 
 ## Turtle graphics
@@ -269,6 +301,30 @@ for value in range(1, 5):
 print(total)
 ```
 @GLPython.visual
+
+## Box or substitution
+
+The visualizer shows a call to a function whose body is a single `return` either
+as a box or replaced by its return expression (substitution, the default), and
+learners can switch with the toggle in its toolbar. To preset the mode for one
+block, pass `box` or `substitution` to `@GLPython.eval` or `@GLPython.visual`:
+
+```python
+def quadrat(x):
+    return x * x
+
+quadrat(7)
+```
+@GLPython.visual(box)
+
+Without an argument the block uses the mode the learner last chose, and
+substitution at first.
+
+## Language
+
+The buttons and the embed follow the course's `language:` header: German for
+`de` (including regional variants such as `de-CH`), English for anything else.
+Python's own error messages are never translated.
 
 ## Hosting and compatibility
 
