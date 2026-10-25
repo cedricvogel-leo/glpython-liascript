@@ -781,8 +781,8 @@ https://liascript.github.io/LiveEditor/?/show/file/https://raw.githubusercontent
 ```
 
 `node scripts/check-macro.mjs` checks the syntax of the template's `<script>`
-blocks with `node --check`; CI runs it on every push and pull request, since a
-merge to `main` reaches every course.
+blocks with `node --check`; CI runs it on every pull request and on `main`,
+since a merge to `main` reaches every course.
 
 For local embed development, change `embedOrigin` and `embedUrl` in the template
 header to the origin printed by `npm run dev:embed` in `glpython-editor`.
