@@ -967,9 +967,9 @@ A course builds its own profiles from these options as macros in its header,
 passing `@0` on so a block can add more options (a mode or library URLs):
 
 ```text
-@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset,ide @0)
-@Code.rezept:   @GLPython.eval(features=run,repl,visualize,tests,reset,ide @0)
-@Code.pruefung: @GLPython.eval(features=run,reset @0)
+@Code.erkunden: @GLPython.eval(features=run,repl,visualize,ide @0)
+@Code.rezept:   @GLPython.eval(features=run,repl,visualize,tests,ide @0)
+@Code.pruefung: @GLPython.eval(features=run @0)
 @Code.demo:     @GLPython.visual(large @0)
 ```
 

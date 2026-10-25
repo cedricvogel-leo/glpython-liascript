@@ -8,11 +8,11 @@ comment:  Test page for the glpython macro's features= / large options: one
 
 import:   https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md
 
-@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset,ide @0)
+@Code.erkunden: @GLPython.eval(features=run,repl,visualize,ide @0)
 
-@Code.rezept: @GLPython.eval(features=run,repl,visualize,tests,reset,ide @0)
+@Code.rezept: @GLPython.eval(features=run,repl,visualize,tests,ide @0)
 
-@Code.pruefung: @GLPython.eval(features=run,reset @0)
+@Code.pruefung: @GLPython.eval(features=run @0)
 
 @Code.voll: @GLPython.eval(@0)
 
@@ -26,15 +26,15 @@ Jede Folie zeigt ein Profil des Kurses. Die Profile sind Makros des Kurses, die
 
 | Profil   | Optionen                                       |
 |----------|------------------------------------------------|
-| erkunden | `features=run,repl,visualize,reset,ide`        |
-| rezept   | `features=run,repl,visualize,tests,reset,ide`  |
-| pruefung | `features=run,reset`                           |
+| erkunden | `features=run,repl,visualize,ide`              |
+| rezept   | `features=run,repl,visualize,tests,ide`        |
+| pruefung | `features=run`                                 |
 | voll     | (alles)                                        |
 | demo     | `@GLPython.visual(large)`                      |
 
 ## erkunden
 
-Ausführen, REPL, Visualisieren, Zurücksetzen - keine Tests, kein Export.
+Ausführen, REPL, Visualisieren, IDE-Link - keine Tests, kein Export.
 
 ```python
 def quadrat(x):
@@ -62,7 +62,7 @@ def quadrat(x):
 
 ## pruefung
 
-Nur Ausführen und Zurücksetzen - wie in einer Prüfung.
+Nur Ausführen - wie in einer Prüfung.
 
 ```python
 def quadrat(x):
