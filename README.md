@@ -153,6 +153,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 .glpython-embed .glp-file pre { max-height: 320px; overflow: auto; margin: 6px 0; padding: 12px; color: ${token("text")}; background: ${token("surface")}; border: 1px solid ${token("border")}; border-radius: ${token("radius")}; font: 15px/1.6 ${token("font-code")}; }
 .glpython-embed iframe { display: block; width: 100%; height: 220px; border: 0; border-top: 1px solid ${token("border")}; border-radius: 0; background: ${token("bg")}; }
 .glpython-embed--visual iframe { border-top: 0; }
+.glpython-embed--large .glp-button { padding: 10px 14px; font-size: 16px; }
 `
     document.head.prepend(style)
   }
@@ -342,8 +343,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       attach()
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
-      const minimumHeight = mode === "visual" ? 420 : 170
-      frame.style.height = `${Math.max(minimumHeight, Math.min(message.height, 1200))}px`
+      // The embed's height follows its content (the visualizer too, unless
+      // "large" asks for 60% of the window).
+      frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
       showError(message.message || strings.embedError)
     }
@@ -435,6 +437,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
     ) ?? null
     if (codeBlock && codeBlock.hidden !== (mode === "visual")) codeBlock.hidden = mode === "visual"
+    frame.parentElement?.classList.toggle("glpython-embed--large", large)
     setShown(liaScriptRunButton(), false)
     setShown(controls, mode !== "visual", "flex")
     // Only when it differs: attach() runs on every DOM change (see the
@@ -586,8 +589,8 @@ for _ in range(4):
 
 Use `@GLPython.visual` when learners should explore a prepared program without
 editing it. The fenced source is hidden and the visualization starts
-automatically. The visualizer keeps its scrubber, restart, step, play/pause,
-animation, and synchronized output controls.
+automatically. The visualizer keeps its step buttons, scrubber, box/substitution
+switch, options menu (animated steps), and synchronized output.
 
 ```python
 total = 0
@@ -710,6 +713,7 @@ glpython block together:
   border: 1px solid var(--glp-border, #D1D5DB); border-bottom: none;
   border-radius: var(--glp-radius, 4px) var(--glp-radius, 4px) 0 0;
   margin-bottom: 0; padding: 8px 8px 0;
+  background: var(--glp-bg, #FFFFFF);
 }
 p.lia-paragraph:empty:has(+ .glpython-embed) { display: none; }
 .lia-code--block + p.lia-paragraph:empty + .glpython-embed {
