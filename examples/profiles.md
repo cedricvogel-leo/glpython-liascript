@@ -8,9 +8,9 @@ comment:  Test page for the glpython macro's features= / large options: one
 
 import:   https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md
 
-@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset @0)
+@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset,ide @0)
 
-@Code.rezept: @GLPython.eval(features=run,repl,visualize,tests,reset @0)
+@Code.rezept: @GLPython.eval(features=run,repl,visualize,tests,reset,ide @0)
 
 @Code.pruefung: @GLPython.eval(features=run,reset @0)
 
@@ -26,8 +26,8 @@ Jede Folie zeigt ein Profil des Kurses. Die Profile sind Makros des Kurses, die
 
 | Profil   | Optionen                                       |
 |----------|------------------------------------------------|
-| erkunden | `features=run,repl,visualize,reset`            |
-| rezept   | `features=run,repl,visualize,tests,reset`      |
+| erkunden | `features=run,repl,visualize,reset,ide`        |
+| rezept   | `features=run,repl,visualize,tests,reset,ide`  |
 | pruefung | `features=run,reset`                           |
 | voll     | (alles)                                        |
 | demo     | `@GLPython.visual(large)`                      |
