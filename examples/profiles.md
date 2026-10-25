@@ -6,7 +6,7 @@ comment:  Test page for the glpython macro's features= / large options: one
           block per course profile, two blocks with the same profile, a
           program of two files, and a wrong option.
 
-import:   https://raw.githubusercontent.com/cedricvogel-leo/glpython-liascript/main/README.md
+import:   https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md
 
 @Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset @0)
 

@@ -37,7 +37,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 <script run-once>
 (() => {
   const protocolVersion = 3
-  const embedOrigin = "https://cedricvogel-leo.github.io"
+  const embedOrigin = "https://glpython-edu.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const sessionId = "@0"
   const mode = "@1"
@@ -538,7 +538,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 # glpython for LiaScript
 
 Run and visualize Python directly in a LiaScript course with the browser-based
-[glpython](https://github.com/cedricvogel-leo/glpython) editor.
+[glpython](https://github.com/glpython-edu/glpython) editor.
 
 The macros use LiaScript's native editor as the source of truth and a separately
 hosted iframe for execution and visualization. Python runs locally in the learner's browser through Pyodide; the current source is sent for each action through an
@@ -549,7 +549,7 @@ origin-checked, versioned handshake.
 Add the template to the header of a LiaScript course:
 
 ```text
-import: https://raw.githubusercontent.com/cedricvogel-leo/glpython-liascript/main/README.md
+import: https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md
 ```
 
 ## Editor and visualizer
@@ -783,7 +783,7 @@ English. Python's own values and error messages are never translated.
 The template currently targets:
 
 ```text
-https://cedricvogel-leo.github.io/glpython-editor/
+https://glpython-edu.github.io/glpython-editor/
 ```
 
 The embed protocol is versioned independently of the course template.
@@ -799,7 +799,7 @@ Open this file through the LiaScript LiveEditor to exercise the real macro
 environment:
 
 ```text
-https://liascript.github.io/LiveEditor/?/show/file/https://raw.githubusercontent.com/cedricvogel-leo/glpython-liascript/main/README.md
+https://liascript.github.io/LiveEditor/?/show/file/https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md
 ```
 
 `node scripts/check-macro.mjs` checks the syntax of the template's `<script>`
