@@ -36,7 +36,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
 <script run-once>
 (() => {
-  const protocolVersion = 3
+  const protocolVersion = 4
   const embedOrigin = "https://glpython-edu.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
   const sessionId = "@0"
@@ -84,6 +84,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const strings = {
     de: {
       run: "Ausführen",
+      stop: "Stoppen",
       reset: "Zurücksetzen",
       visualize: "Visualisieren",
       tests: "Tests",
@@ -111,6 +112,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     },
     en: {
       run: "Run",
+      stop: "Stop",
       reset: "Reset",
       visualize: "Visualize",
       tests: "Tests",
@@ -218,6 +220,12 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   let inputAvailable = false
   let filesSupported = false
   let testsSupported = false
+  // Version 4: the embed can stop Python, and says while it is busy - then
+  // ▶ Run is ■ Stop.
+  let stopSupported = false
+  let pythonBusy = false
+  // The newest protocol version both understand.
+  const embedVersion = () => stopSupported ? protocolVersion : testsSupported ? 3 : filesSupported ? 2 : 1
   let runtimeReady = false
   let pendingRun = false
   // The code file chosen in the split button's menu; null runs the last one.
@@ -459,7 +467,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     reportInputCapability(main.source)
     if (filesSupported) {
       // Version 3 ("glpython:test") only with embeds that understand it.
-      frame.contentWindow.postMessage({ type, version: testsSupported ? protocolVersion : 2, source: main.source, mode, files: program.files, mainFile: program.mainFile }, embedOrigin)
+      frame.contentWindow.postMessage({ type, version: embedVersion(), source: main.source, mode, files: program.files, mainFile: program.mainFile }, embedOrigin)
     } else {
       if (program.files.length > 1) showError(strings.filesUnsupported)
       frame.contentWindow.postMessage({ type, version: 1, source: main.source, mode }, embedOrigin)
@@ -468,8 +476,12 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
   const sendCommand = (type, fallbackSource) => {
     if (!frame?.contentWindow) return
+    if (type === "glpython:stop") {
+      if (stopSupported) frame.contentWindow.postMessage({ type, version: protocolVersion }, embedOrigin)
+      return
+    }
     if (type === "glpython:reset") {
-      frame.contentWindow.postMessage({ type, version: testsSupported ? protocolVersion : filesSupported ? 2 : 1 }, embedOrigin)
+      frame.contentWindow.postMessage({ type, version: embedVersion() }, embedOrigin)
       return
     }
     postProgram(type, fallbackSource)
@@ -488,14 +500,16 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (!frame || event.origin !== embedOrigin || event.source !== frame.contentWindow) return
     const message = event.data
     // The embed answers in the version this macro last used (1 until it knows
-    // the embed understands version 2).
-    if (!message || (message.version !== 1 && message.version !== protocolVersion)) return
+    // what the embed understands, see embedVersion).
+    if (!message || ![1, 2, 3, 4].includes(message.version)) return
 
     if (message.type === "glpython:ready") {
       runtimeReady = true
       inputAvailable = message.capabilities?.input === true
       filesSupported = message.capabilities?.files === true
       testsSupported = message.capabilities?.tests === true
+      stopSupported = message.capabilities?.stop === true
+      pythonBusy = false
       frame.dataset.inputAvailable = String(inputAvailable)
       sendCommand(mode === "visual" ? "glpython:visualize" : "glpython:load")
       if (pendingRun) {
@@ -508,6 +522,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       }
       attach()
       send.lia("LIA: stop")
+    } else if (message.type === "glpython:busy") {
+      pythonBusy = message.busy === true
+      attach()
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       // The embed's height follows its content (the visualizer too, unless
       // "large" asks for 60% of the window).
@@ -544,7 +561,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     const menuButton = document.getElementById(`glpython-run-menu-${sessionId}`)
     const menu = document.getElementById(`glpython-run-list-${sessionId}`)
     if (!split || !runButton || !menuButton || !menu) return
-    runButton.onclick = runThroughLiaScript
+    // While Python is busy (only embeds of protocol version 4 say so), the same
+    // button stops it: Python restarts, the code stays.
+    runButton.onclick = pythonBusy ? () => sendCommand("glpython:stop") : runThroughLiaScript
     // The run button whenever "run" is on; its ▾ menu only for several files.
     const show = mode !== "visual" && hasFeature("run")
     setShown(split, show, "inline-flex")
@@ -552,10 +571,14 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     const severalFiles = codeFiles.length > 1
     setShown(menuButton, severalFiles)
     split.classList.toggle("glp-run-split--menu", severalFiles)
-    const label = `▶ ${strings.run}`
-    if (runButton.textContent !== label) runButton.textContent = label
+    const label = pythonBusy ? `■ ${strings.stop}` : `▶ ${strings.run}`
+    if (runButton.textContent !== label) {
+      // ■ Stop keeps ▶ Run's width, so the buttons beside it don't move.
+      runButton.style.minWidth = pythonBusy ? `${runButton.offsetWidth}px` : ""
+      runButton.textContent = label
+    }
     const mainFile = codeFiles.length === 0 ? null : codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
-    const title = severalFiles && mainFile ? strings.runFile(mainFile) : strings.run
+    const title = pythonBusy ? strings.stop : severalFiles && mainFile ? strings.runFile(mainFile) : strings.run
     if (runButton.title !== title) runButton.title = title
     if (!severalFiles) return
     if (menuButton.title !== strings.chooseFile) {
@@ -590,7 +613,10 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const attach = () => {
     const nextFrame = document.getElementById(`glpython-frame-${sessionId}`)
     if (!nextFrame) return
-    if (frame !== nextFrame) runtimeReady = false
+    if (frame !== nextFrame) {
+      runtimeReady = false
+      pythonBusy = false
+    }
     frame = nextFrame
     error = document.getElementById(`glpython-error-${sessionId}`)
     const controls = document.getElementById(`glpython-controls-${sessionId}`)
@@ -876,6 +902,12 @@ one per function (`glp-button--run`, `glp-button--tests`,
 has `glp-button--primary`, its ▾ menu `glp-button--run-menu`, and Open in IDE's
 ▾ menu `glp-button--ide-menu`. The row has
 `glp-buttons`, so a course can restyle all of it with `@style`.
+
+While Python is busy (a program, a REPL input or Tests that run for more than
+a moment, e.g. `while True:`), ▶ Run becomes **■ Stop** («■ Stoppen») in the
+same place and width: it restarts Python, the code stays, and the console notes
+it. This needs an embed of protocol version 4; with an older embed ▶ Run stays
+as it was.
 
 The block has glpython's own look (the course design: white, light grey code
 areas, ink accent, the system's fonts) without any `@style`: ▶ Run is filled,
