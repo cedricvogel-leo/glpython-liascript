@@ -372,13 +372,13 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       }
       attach()
       send.lia("LIA: stop")
+    } else if (message.type === "glpython:busy") {
+      pythonBusy = message.busy === true
+      attach()
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       // The embed's height follows its content (the visualizer too, unless
       // "large" asks for 60% of the window).
       frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
-    } else if (message.type === "glpython:busy") {
-      pythonBusy = message.busy === true
-      attach()
     } else if (message.type === "glpython:error") {
       showError(message.message || strings.embedError)
     }
