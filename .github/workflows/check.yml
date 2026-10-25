@@ -1,9 +1,11 @@
 name: Check macro
 
-# The macro goes live in every course when main changes, so every push and
-# pull request checks it first.
+# The macro goes live in every course when main changes, so every pull
+# request checks it first, and main again after the merge. (A pull request's
+# branch runs once, as pull_request.)
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
