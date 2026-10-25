@@ -7,12 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The LiaScript macro that embeds glpython in courses. `README.md` is both the documentation and the macro itself: its header comment defines `@GLPython.eval`, `@GLPython.turtle` and `@GLPython.visual` and holds two `<script>` blocks (the per-run block and a `run-once` block with the session logic). Courses import it from `main`:
 
 ```
-import: https://raw.githubusercontent.com/cedricvogel-leo/glpython-liascript/main/README.md
+import: https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md
 ```
 
 So **merging to `main` reaches every course immediately** (e.g. `../programmieren-mit-funktionen`).
 
-The macro renders a button row below the block's LiaScript code editor and an iframe with the glpython embed (`https://cedricvogel-leo.github.io/glpython-editor/index.html`, built from `../glpython-editor`, which also deploys on merge). It talks to the embed through the versioned `postMessage` protocol defined in glpython-editor's `src/embedProtocol.ts` (`protocolVersion` here; read that repo's CLAUDE.md). LiaScript stays the editor: Run sends the current source of every code block of the project.
+The macro renders a button row below the block's LiaScript code editor and an iframe with the glpython embed (`https://glpython-edu.github.io/glpython-editor/index.html`, built from `../glpython-editor`, which also deploys on merge). It talks to the embed through the versioned `postMessage` protocol defined in glpython-editor's `src/embedProtocol.ts` (`protocolVersion` here; read that repo's CLAUDE.md). LiaScript stays the editor: Run sends the current source of every code block of the project.
 
 `examples/profiles.md` is a test course for the `features=` / `large` options and a program of several files.
 
