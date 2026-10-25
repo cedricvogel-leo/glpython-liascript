@@ -113,6 +113,51 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       unknownFeatures: (names) => `Unknown in features=: ${names} (possible: ${featureNames.join(", ")})`,
     },
   }[language]
+  // glpython's look (the course design): the frame, the button row and its
+  // states. Injected once per page, first in <head>, so a course's @style
+  // can override any rule; every value is a --glp-* variable with glpython's
+  // default as fallback, so a course can also set the variables. The block
+  // stays light in LiaScript's dark mode, like LiaScript's own code editor.
+  if (!document.getElementById("glpython-macro-style")) {
+    const defaults = {
+      bg: "#FFFFFF", surface: "#F3F4F6", border: "#D1D5DB", "border-control": "#6B7280",
+      text: "#1A1A1A", "text-muted": "#4B5563", accent: "#1F3A5F", "on-accent": "#FFFFFF",
+      error: "#B42318", warning: "#8A4B00", radius: "4px",
+      "font-ui": "system-ui, sans-serif", "font-code": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    }
+    const token = (name) => `var(--glp-${name}, ${defaults[name]})`
+    const style = document.createElement("style")
+    style.id = "glpython-macro-style"
+    style.textContent = `
+.glpython-embed { color: ${token("text")}; background: ${token("bg")}; border: 1px solid ${token("border")}; border-radius: ${token("radius")}; overflow: hidden; font: 14px/1.4 ${token("font-ui")}; }
+.glpython-embed .glp-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; align-items: center; padding: 12px; }
+.glpython-embed .glp-button { margin: 0; padding: 8px 12px; border: 1px solid ${token("border-control")}; border-radius: ${token("radius")}; color: ${token("text")}; background: ${token("bg")}; font: 600 14px/1.2 ${token("font-ui")}; cursor: pointer; }
+.glpython-embed .glp-button:hover:not(:disabled) { border-color: ${token("accent")}; color: ${token("accent")}; }
+.glpython-embed .glp-button:focus-visible { outline: 2px solid ${token("accent")}; outline-offset: 2px; }
+.glpython-embed .glp-button:disabled { opacity: .5; cursor: not-allowed; }
+.glpython-embed .glp-button--primary, .glpython-embed .glp-button--run-menu { border-color: ${token("accent")}; color: ${token("on-accent")}; background: ${token("accent")}; }
+.glpython-embed .glp-button--primary:hover:not(:disabled), .glpython-embed .glp-button--run-menu:hover:not(:disabled) { border-color: color-mix(in srgb, ${token("accent")} 88%, black); color: ${token("on-accent")}; background: color-mix(in srgb, ${token("accent")} 88%, black); }
+.glpython-embed .glp-run-split { position: relative; }
+.glpython-embed .glp-run-split--menu .glp-button--run { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.glpython-embed .glp-run-split--menu .glp-button--run-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: ${token("on-accent")}; padding-left: 6px; padding-right: 8px; }
+.glpython-embed .glp-run-list { position: absolute; top: 100%; left: 0; z-index: 10; min-width: 180px; margin-top: 4px; padding: 4px 0; background: ${token("bg")}; border: 1px solid ${token("border")}; border-radius: ${token("radius")}; box-shadow: 0 8px 20px rgba(0, 0, 0, .12); }
+.glpython-embed .glp-run-list button { display: block; width: 100%; padding: 6px 12px; border: 0; color: ${token("text")}; background: none; text-align: left; font: inherit; cursor: pointer; }
+.glpython-embed .glp-run-list button:hover { color: ${token("accent")}; background: ${token("surface")}; }
+.glpython-embed .glpython-warning { margin: 0; padding: 0 12px 12px; color: ${token("warning")}; }
+.glpython-embed .glpython-error { margin: 0; padding: 0 12px 12px; color: ${token("error")}; }
+.glpython-embed .glp-files { padding: 0 12px 12px; }
+.glpython-embed .glp-file { margin: 4px 0; }
+.glpython-embed .glp-file code { padding: 1px 5px; background: ${token("surface")}; border-radius: ${token("radius")}; font-family: ${token("font-code")}; }
+.glpython-embed .glp-file .glp-button { margin-left: 8px; padding: 4px 10px; font-size: 13px; }
+.glpython-embed .glp-file .glpython-error { padding: 0; }
+.glpython-embed .glp-file pre { max-height: 320px; overflow: auto; margin: 6px 0; padding: 12px; color: ${token("text")}; background: ${token("surface")}; border: 1px solid ${token("border")}; border-radius: ${token("radius")}; font: 15px/1.6 ${token("font-code")}; }
+.glpython-embed iframe { display: block; width: 100%; height: 220px; border: 0; border-top: 1px solid ${token("border")}; border-radius: 0; background: ${token("bg")}; }
+.glpython-embed--visual iframe { border-top: 0; }
+.glpython-embed--large .glp-button { padding: 10px 14px; font-size: 16px; }
+`
+    document.head.prepend(style)
+  }
+
   const sessions = window.__glpythonSessions ??= new Map()
   const existingSession = sessions.get(sessionId)
   if (existingSession) {
@@ -188,7 +233,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     container.hidden = false
     for (const library of list) {
       const row = document.createElement("div")
-      row.style.margin = "4px 0"
+      row.className = "glp-file"
       const label = document.createElement("span")
       label.textContent = `${strings.library}: `
       const name = document.createElement("code")
@@ -197,18 +242,16 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       if (library.failure) {
         const failure = document.createElement("span")
         failure.className = "glpython-error"
-        failure.style.color = "#b23a3a"
         failure.textContent = ` ${strings.libraryFailed(library.path, library.failure)}`
         row.append(failure)
       } else {
         const toggle = document.createElement("button")
         toggle.type = "button"
+        toggle.className = "glp-button"
         toggle.textContent = strings.viewFile
-        toggle.style.marginLeft = "8px"
         const view = document.createElement("pre")
         view.hidden = true
         view.textContent = library.source
-        view.style.cssText = "max-height:320px;overflow:auto;margin:6px 0;padding:8px;background:#f6f6f3;border:1px solid #ddd;border-radius:6px"
         toggle.onclick = () => {
           view.hidden = !view.hidden
           toggle.textContent = view.hidden ? strings.viewFile : strings.hideFile
@@ -300,8 +343,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       attach()
       send.lia("LIA: stop")
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
-      const minimumHeight = mode === "visual" ? 420 : 170
-      frame.style.height = `${Math.max(minimumHeight, Math.min(message.height, 1200))}px`
+      // The embed's height follows its content (the visualizer too, unless
+      // "large" asks for 60% of the window).
+      frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
       showError(message.message || strings.embedError)
     }
@@ -341,6 +385,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     if (!show) return
     const severalFiles = codeFiles.length > 1
     setShown(menuButton, severalFiles)
+    split.classList.toggle("glp-run-split--menu", severalFiles)
     const label = `▶ ${strings.run}`
     if (runButton.textContent !== label) runButton.textContent = label
     const mainFile = codeFiles.length === 0 ? null : codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
@@ -365,7 +410,6 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       item.setAttribute("role", "menuitemradio")
       item.setAttribute("aria-checked", String(file.path === mainFile))
       item.textContent = `${file.path === mainFile ? "✓ " : ""}${file.path}`
-      item.style.cssText = "display:block;width:100%;padding:6px 12px;border:0;background:none;text-align:left;font:inherit;cursor:pointer"
       item.onclick = () => {
         chosenFile = file.path
         menu.hidden = true
@@ -393,6 +437,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       block.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING
     ) ?? null
     if (codeBlock && codeBlock.hidden !== (mode === "visual")) codeBlock.hidden = mode === "visual"
+    frame.parentElement?.classList.toggle("glpython-embed--large", large)
     setShown(liaScriptRunButton(), false)
     setShown(controls, mode !== "visual", "flex")
     // Only when it differs: attach() runs on every DOM change (see the
@@ -447,27 +492,26 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 "LIA: wait"
 </script>
 
-<div class="glpython-embed" style="border:1px solid rgba(0,0,0,.18);border-radius:4px;overflow:hidden">
-  <div id="glpython-controls-@0" class="glp-buttons" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;align-items:center;padding:8px">
-    <span id="glpython-run-split-@0" style="position:relative;display:none">
-      <button id="glpython-run-@0" class="glp-button glp-button--primary glp-button--run" type="button" disabled style="border-top-right-radius:0;border-bottom-right-radius:0">▶ Run</button>
-      <button id="glpython-run-menu-@0" class="glp-button glp-button--run-menu" type="button" disabled aria-haspopup="true" aria-expanded="false" style="display:none;border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.15);padding-left:6px;padding-right:8px">▾</button>
-      <span id="glpython-run-list-@0" role="menu" hidden style="position:absolute;top:100%;left:0;z-index:10;min-width:180px;margin-top:4px;padding:4px 0;background:#fff;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></span>
+<div class="glpython-embed glpython-embed--@1">
+  <div id="glpython-controls-@0" class="glp-buttons">
+    <span id="glpython-run-split-@0" class="glp-run-split" style="display:none">
+      <button id="glpython-run-@0" class="glp-button glp-button--primary glp-button--run" type="button" disabled>▶ Run</button>
+      <button id="glpython-run-menu-@0" class="glp-button glp-button--run-menu" type="button" disabled aria-haspopup="true" aria-expanded="false" style="display:none">▾</button>
+      <span id="glpython-run-list-@0" class="glp-run-list" role="menu" hidden></span>
     </span>
     <button id="glpython-tests-@0" class="glp-button glp-button--tests" type="button" disabled style="display:none">Tests</button>
     <button id="glpython-visualize-@0" class="glp-button glp-button--visualize" type="button" disabled>Visualize</button>
     <button id="glpython-reset-@0" class="glp-button glp-button--reset" type="button" disabled>Reset</button>
   </div>
-  <p id="glpython-warning-@0" class="glpython-warning" style="display:none;margin:0;padding:0 8px 8px;color:#8a5a1f"></p>
-  <div id="glpython-files-@0" hidden style="padding:0 8px 8px"></div>
-  <p id="glpython-error-@0" class="glpython-error" hidden style="margin:0;padding:0 8px 8px"></p>
+  <p id="glpython-warning-@0" class="glpython-warning" style="display:none"></p>
+  <div id="glpython-files-@0" class="glp-files" hidden></div>
+  <p id="glpython-error-@0" class="glpython-error" hidden></p>
   <iframe
     id="glpython-frame-@0"
     title="glpython @1 runtime"
     loading="lazy"
     referrerpolicy="strict-origin"
     allow="clipboard-read; clipboard-write"
-    style="display:block;width:100%;height:220px;border:0;border-radius:0;background:#f4f1e9"
   ></iframe>
 </div>
 @end
@@ -545,8 +589,8 @@ for _ in range(4):
 
 Use `@GLPython.visual` when learners should explore a prepared program without
 editing it. The fenced source is hidden and the visualization starts
-automatically. The visualizer keeps its scrubber, restart, step, play/pause,
-animation, and synchronized output controls.
+automatically. The visualizer keeps its step buttons, scrubber, box/substitution
+switch, options menu (animated steps), and synchronized output.
 
 ```python
 total = 0
@@ -653,6 +697,34 @@ and the classes `glp-button` plus one per function (`glp-button--run`,
 `glp-button--tests`, `glp-button--visualize`, `glp-button--reset`); ▶ Run also
 has `glp-button--primary`, its ▾ menu `glp-button--run-menu`. The row has
 `glp-buttons`, so a course can restyle all of it with `@style`.
+
+The block has glpython's own look (the course design: white, light grey code
+areas, ink accent, the system's fonts) without any `@style`: ▶ Run is filled,
+the other buttons are outlined, and the block stays light in LiaScript's dark
+mode, like LiaScript's own code editor. The macro adds its rules once per page
+as the first stylesheet, so any `@style` rule overrides them, and every value is
+a `--glp-*` variable (see glpython-editor's README) that a course may set on the
+page for the button row. The frame is the rule `.glpython-embed { border: … }`.
+To draw one frame around LiaScript's code block, its history row and the
+glpython block together:
+
+```css
+.lia-code--block:has(+ p.lia-paragraph:empty + .glpython-embed) {
+  border: 1px solid var(--glp-border, #D1D5DB); border-bottom: none;
+  border-radius: var(--glp-radius, 4px) var(--glp-radius, 4px) 0 0;
+  margin-bottom: 0; padding: 8px 8px 0;
+  background: var(--glp-bg, #FFFFFF);
+}
+p.lia-paragraph:empty:has(+ .glpython-embed) { display: none; }
+.lia-code--block + p.lia-paragraph:empty + .glpython-embed {
+  border: 1px solid var(--glp-border, #D1D5DB); border-top: none;
+  border-radius: 0 0 var(--glp-radius, 4px) var(--glp-radius, 4px);
+  margin-bottom: 20px; padding: 0 8px 8px;
+}
+```
+
+This depends on LiaScript's internal classes and should be checked after
+LiaScript updates.
 
 `features=` in the macro's argument shows only the listed parts: `run`, `tests`,
 `visualize`, `reset`, `repl` (the input line below the output) and `export` (the
