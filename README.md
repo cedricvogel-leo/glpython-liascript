@@ -106,6 +106,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       openInIdeTitle: "Öffnet eine Kopie in der IDE – Änderungen dort wirken nicht hierher zurück.",
       ideMenu: "Weitere Aktionen zur IDE",
       copyIdeLink: "IDE-Link kopieren",
+      copyIdeLinkTitle: "Kopiert einen Link zu einer Kopie dieses Codes in der IDE, z. B. für die Abgabe.",
       linkCopied: "Link kopiert ✓",
       copyByHand: "Link zum Kopieren:",
       ideProject: "Aus dem Kurs",
@@ -134,6 +135,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       openInIdeTitle: "Opens a copy in the IDE – changes there don't come back here.",
       ideMenu: "More IDE actions",
       copyIdeLink: "Copy IDE link",
+      copyIdeLinkTitle: "Copies a link to a copy of this code in the IDE, e.g. to hand it in.",
       linkCopied: "Link copied ✓",
       copyByHand: "Link to copy:",
       ideProject: "From the course",
@@ -190,8 +192,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     document.head.prepend(style)
   }
 
-  // «In IDE öffnen» opens the block's code as a copy in the glpython IDE, as
-  // a share link of the IDE (?project=, lz-string-compressed JSON). The link
+  // «IDE-Link kopieren» (and «In IDE öffnen») hand the block's code to the
+  // glpython IDE as a copy, as a share link of the IDE (?project=, lz-string-compressed JSON). The link
   // is built while the learner taps, without waiting: iPad Safari allows the
   // clipboard and a new tab only inside the tap's own handler. So lz-string
   // (the IDE's version) is loaded once per page in advance.
@@ -417,18 +419,20 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }
   }
 
+  // The split button: «IDE-Link kopieren» in front - the learners' hand-in -
+  // and «In IDE öffnen» in its ▾ menu. Both act right in the tap's handler.
   const updateIdeButton = () => {
     const split = document.getElementById(`glpython-ide-split-${sessionId}`)
-    const openButton = document.getElementById(`glpython-ide-${sessionId}`)
+    const copyButton = document.getElementById(`glpython-ide-${sessionId}`)
     const menuButton = document.getElementById(`glpython-ide-menu-${sessionId}`)
     const menu = document.getElementById(`glpython-ide-list-${sessionId}`)
-    if (!split || !openButton || !menuButton || !menu) return
+    if (!split || !copyButton || !menuButton || !menu) return
     setShown(split, mode !== "visual" && hasFeature("ide"), "inline-flex")
     const disabled = lzString === null
-    if (openButton.disabled !== disabled) openButton.disabled = disabled
+    if (copyButton.disabled !== disabled) copyButton.disabled = disabled
     if (menuButton.disabled !== disabled) menuButton.disabled = disabled
-    if (openButton.textContent !== strings.openInIde) openButton.textContent = strings.openInIde
-    if (openButton.title !== strings.openInIdeTitle) openButton.title = strings.openInIdeTitle
+    if (copyButton.textContent !== strings.copyIdeLink) copyButton.textContent = strings.copyIdeLink
+    if (copyButton.title !== strings.copyIdeLinkTitle) copyButton.title = strings.copyIdeLinkTitle
     if (menuButton.title !== strings.ideMenu) {
       menuButton.title = strings.ideMenu
       menuButton.setAttribute("aria-label", strings.ideMenu)
@@ -437,10 +441,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       menu.hidden = true
       menuButton.setAttribute("aria-expanded", "false")
     }
-    openButton.onclick = () => {
+    copyButton.onclick = () => {
       closeMenu()
-      const link = ideLink()
-      if (link) window.open(link, "_blank", "noopener")
+      copyIdeLink()
     }
     menuButton.onclick = () => {
       menu.hidden = !menu.hidden
@@ -453,10 +456,12 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       item.setAttribute("role", "menuitem")
       menu.append(item)
     }
-    if (item.textContent !== strings.copyIdeLink) item.textContent = strings.copyIdeLink
+    if (item.textContent !== strings.openInIde) item.textContent = strings.openInIde
+    if (item.title !== strings.openInIdeTitle) item.title = strings.openInIdeTitle
     item.onclick = () => {
       closeMenu()
-      copyIdeLink()
+      const link = ideLink()
+      if (link) window.open(link, "_blank", "noopener")
     }
   }
 
@@ -694,7 +699,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     <button id="glpython-visualize-@0" class="glp-button glp-button--visualize" type="button" disabled>Visualize</button>
     <button id="glpython-reset-@0" class="glp-button glp-button--reset" type="button" disabled>Reset</button>
     <span id="glpython-ide-split-@0" class="glp-ide-split" style="display:none">
-      <button id="glpython-ide-@0" class="glp-button glp-button--ide" type="button" disabled>Open in IDE</button>
+      <button id="glpython-ide-@0" class="glp-button glp-button--ide" type="button" disabled>Copy IDE link</button>
       <button id="glpython-ide-menu-@0" class="glp-button glp-button--ide-menu" type="button" disabled aria-haspopup="true" aria-expanded="false">▾</button>
       <span id="glpython-ide-list-@0" class="glp-run-list" role="menu" hidden></span>
     </span>
@@ -894,13 +899,13 @@ substitution at first.
 ## Buttons and profiles
 
 Below each block sits one row of buttons, left to right **▶ Run · Tests ·
-Visualize · Reset · Open in IDE ▾** («Ausführen · Tests · Visualisieren ·
-Zurücksetzen · In IDE öffnen ▾» in German courses), framed together with the
+Visualize · Reset · Copy IDE link ▾** («Ausführen · Tests · Visualisieren ·
+Zurücksetzen · IDE-Link kopieren ▾» in German courses), framed together with the
 output panel. Every button has a text label and the classes `glp-button` plus
 one per function (`glp-button--run`, `glp-button--tests`,
 `glp-button--visualize`, `glp-button--reset`, `glp-button--ide`); ▶ Run also
-has `glp-button--primary`, its ▾ menu `glp-button--run-menu`, and Open in IDE's
-▾ menu `glp-button--ide-menu`. The row has
+has `glp-button--primary`, its ▾ menu `glp-button--run-menu`, and Copy IDE
+link's ▾ menu `glp-button--ide-menu`. The row has
 `glp-buttons`, so a course can restyle all of it with `@style`.
 
 While Python is busy (a program, a REPL input or Tests that run for more than
@@ -937,12 +942,13 @@ p.lia-paragraph:empty:has(+ .glpython-embed) { display: none; }
 This depends on LiaScript's internal classes and should be checked after
 LiaScript updates.
 
-**Open in IDE** («In IDE öffnen») opens the block's current code as a copy in
-the glpython IDE (<https://glpython-edu.github.io/>) in a new tab, e.g. for
-handing in a solution; its tooltip says that changes there don't come back to
-the course. Its ▾ menu has **Copy IDE link** («IDE-Link kopieren»), which copies
-the same link and confirms with «Link kopiert ✓», or, where the browser doesn't
-allow copying, shows the link in a field to copy by hand. The link is an IDE
+**Copy IDE link** («IDE-Link kopieren») is the hand-in: it copies a link to a
+copy of the block's current code in the glpython IDE
+(<https://glpython-edu.github.io/>) and confirms with «Link kopiert ✓», or,
+where the browser doesn't allow copying, shows the link in a field to copy by
+hand. Its ▾ menu has **Open in IDE** («In IDE öffnen»), which opens the same
+link in a new tab; its tooltip says that changes there don't come back to the
+course. The link is an IDE
 share link: every file of the block (and its libraries) and the file that runs.
 A link longer than GitHub Pages accepts (8192 characters of path and query, a
 program of roughly 5,000 to 30,000 characters) carries the project after `#`
@@ -952,7 +958,7 @@ button stays disabled.
 
 `features=` in the macro's argument shows only the listed parts: `run`, `tests`,
 `visualize`, `reset`, `repl` (the input line below the output), `export` (the
-visualizer's «→-Kette kopieren») and `ide` (Open in IDE). Without it, everything shows. Hidden parts are
+visualizer's «→-Kette kopieren») and `ide` (Copy IDE link ▾). Without it, everything shows. Hidden parts are
 not rendered at all. An unknown name shows a short warning below the buttons.
 `large` makes the code 20px (line height 1.6) and the visualizer at least 60% of
 the window, e.g. for the projector in presentation mode.
