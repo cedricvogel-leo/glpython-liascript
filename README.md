@@ -190,6 +190,22 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     return `${/^[0-9]/.test(stem) ? "_" : ""}${stem}.py`
   }
 
+  // LiaScript's editor indents with real tabs, 2 wide (tabSize 2, useSoftTabs
+  // False), so Tab in a block indented with 4 spaces mixes the two and Python
+  // stops with TabError. The block's editors indent with 4 spaces instead,
+  // unless the course chose otherwise with data-tabsize or data-ace-options
+  // (which LiaScript puts on the editor as attributes). LiaScript sets these
+  // options only for a new editor or when its own value changes, and
+  // attach() runs on every re-render, so a new editor gets them again. An
+  // editor that isn't upgraded to LiaScript's element yet is left for the
+  // next attach(): setting a property on it now would hide the setter.
+  const indentWithSpaces = (editor) => {
+    if (!("tabSize" in editor) || !("useSoftTabs" in editor)) return
+    const aceOptions = (editor.getAttribute("data-ace-options") ?? "").split(/[\s,]+/).map((entry) => entry.split("=")[0])
+    if (!editor.hasAttribute("data-tabsize") && !aceOptions.includes("tabSize") && editor.tabSize !== 4) editor.tabSize = 4
+    if (!aceOptions.includes("useSoftTabs") && editor.useSoftTabs !== true) editor.useSoftTabs = true
+  }
+
   // Every code block right before the iframe (LiaScript groups consecutive
   // blocks into one project), with its file name and its current text.
   const readCodeFiles = () => {
@@ -463,6 +479,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     const warningText = unknownFeatures.length > 0 ? strings.unknownFeatures(unknownFeatures.join(", ")) : ""
     if (warning && warning.textContent !== warningText) warning.textContent = warningText
     setShown(warning, warningText !== "")
+    for (const editor of codeBlock?.querySelectorAll("lia-editor") ?? []) indentWithSpaces(editor)
     updateRunButton(readCodeFiles() ?? [])
     libraries.then(showLibraries)
     if (frame.dataset.glpythonInitialized === "true") return
@@ -555,6 +572,11 @@ it triggers LiaScript's own run action, whose `</>` button is hidden, so LiaScri
 saves edits and keeps its code history (the version arrows stay). The glpython runtime
 provides output and the step-by-step visualizer without mounting a second editor. It
 does not reserve space for turtle graphics.
+
+The macro makes the block's editor indent with 4 spaces: Tab inserts spaces, not
+LiaScript's default tab character, which would stop Python with a `TabError` in a block
+indented with spaces. A block's own `data-tabsize` or `data-ace-options` (e.g.
+`<!-- data-ace-options="useSoftTabs=false" -->`) still wins.
 
 ## State and navigation
 
