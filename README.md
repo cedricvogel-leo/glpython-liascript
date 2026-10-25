@@ -780,5 +780,9 @@ environment:
 https://liascript.github.io/LiveEditor/?/show/file/https://raw.githubusercontent.com/cedricvogel-leo/glpython-liascript/main/README.md
 ```
 
+`node scripts/check-macro.mjs` checks the syntax of the template's `<script>`
+blocks with `node --check`; CI runs it on every push and pull request, since a
+merge to `main` reaches every course.
+
 For local embed development, change `embedOrigin` and `embedUrl` in the template
 header to the origin printed by `npm run dev:embed` in `glpython-editor`.
