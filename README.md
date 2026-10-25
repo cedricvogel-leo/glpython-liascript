@@ -57,7 +57,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   // "features=run,repl,…" shows only these parts (the course builds its
   // profiles from it); without it, everything shows. "large" enlarges the
   // code and the visualizer, e.g. for a demo on the projector.
-  const featureNames = ["run", "tests", "visualize", "reset", "repl", "export"]
+  const featureNames = ["run", "tests", "visualize", "reset", "repl", "export", "ide"]
   const featuresOption = options.find((option) => option.startsWith("features="))
   const requestedFeatures = featuresOption ? featuresOption.slice("features=".length).split(",").map((name) => name.trim()).filter(Boolean) : featureNames
   const unknownFeatures = requestedFeatures.filter((name) => !featureNames.includes(name))
@@ -101,6 +101,13 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       timeout: "Zeitüberschreitung",
       filesUnsupported: "Diese glpython-Version kann nur eine Datei laden; es wird nur die gewählte Datei ausgeführt.",
       unknownFeatures: (names) => `Unbekannt in features=: ${names} (möglich: ${featureNames.join(", ")})`,
+      openInIde: "In IDE öffnen",
+      openInIdeTitle: "Öffnet eine Kopie in der IDE – Änderungen dort wirken nicht hierher zurück.",
+      ideMenu: "Weitere Aktionen zur IDE",
+      copyIdeLink: "IDE-Link kopieren",
+      linkCopied: "Link kopiert ✓",
+      copyByHand: "Link zum Kopieren:",
+      ideProject: "Aus dem Kurs",
     },
     en: {
       run: "Run",
@@ -121,6 +128,13 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
       timeout: "timeout",
       filesUnsupported: "This glpython version can only load one file; only the chosen file runs.",
       unknownFeatures: (names) => `Unknown in features=: ${names} (possible: ${featureNames.join(", ")})`,
+      openInIde: "Open in IDE",
+      openInIdeTitle: "Opens a copy in the IDE – changes there don't come back here.",
+      ideMenu: "More IDE actions",
+      copyIdeLink: "Copy IDE link",
+      linkCopied: "Link copied ✓",
+      copyByHand: "Link to copy:",
+      ideProject: "From the course",
     },
   }[language]
   // glpython's look (the course design): the frame, the button row and its
@@ -153,6 +167,12 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 .glpython-embed .glp-run-list { position: absolute; top: 100%; left: 0; z-index: 10; min-width: 180px; margin-top: 4px; padding: 4px 0; background: ${token("bg")}; border: 1px solid ${token("border")}; border-radius: ${token("radius")}; box-shadow: 0 8px 20px rgba(0, 0, 0, .12); }
 .glpython-embed .glp-run-list button { display: block; width: 100%; padding: 6px 12px; border: 0; color: ${token("text")}; background: none; text-align: left; font: inherit; cursor: pointer; }
 .glpython-embed .glp-run-list button:hover { color: ${token("accent")}; background: ${token("surface")}; }
+.glpython-embed .glp-ide-split { position: relative; }
+.glpython-embed .glp-button--ide { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.glpython-embed .glp-button--ide-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; padding-left: 6px; padding-right: 8px; }
+.glpython-embed .glp-ide-status { color: ${token("text-muted")}; }
+.glpython-embed .glp-ide-link { margin: 0; padding: 0 12px 12px; }
+.glpython-embed .glp-ide-link input { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 6px 8px; color: ${token("text")}; background: ${token("surface")}; border: 1px solid ${token("border-control")}; border-radius: ${token("radius")}; font: 13px/1.4 ${token("font-code")}; }
 .glpython-embed .glpython-warning { margin: 0; padding: 0 12px 12px; color: ${token("warning")}; }
 .glpython-embed .glpython-error { margin: 0; padding: 0 12px 12px; color: ${token("error")}; }
 .glpython-embed .glp-files { padding: 0 12px 12px; }
@@ -167,6 +187,23 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 `
     document.head.prepend(style)
   }
+
+  // «In IDE öffnen» opens the block's code as a copy in the glpython IDE, as
+  // a share link of the IDE (?project=, lz-string-compressed JSON). The link
+  // is built while the learner taps, without waiting: iPad Safari allows the
+  // clipboard and a new tab only inside the tap's own handler. So lz-string
+  // (the IDE's version) is loaded once per page in advance.
+  const ideUrl = "https://glpython-edu.github.io/"
+  window.__glpythonLzString ??= new Promise((resolve, reject) => {
+    const script = document.createElement("script")
+    // "\u0040" is "@": LiaScript would replace "@1" with the macro's argument.
+    script.src = "https://cdn.jsdelivr.net/npm/lz-string\u00401.5.0/libs/lz-string.min.js"
+    script.integrity = "sha384-0d+Gr7vM4Drod8E3hXKgciWJSWbjD/opKLLygI9ktiWbuvlDwQLzU46wJ9s5gsp7"
+    script.crossOrigin = "anonymous"
+    script.onload = () => window.LZString ? resolve(window.LZString) : reject(new Error("lz-string"))
+    script.onerror = reject
+    document.head.append(script)
+  })
 
   const sessions = window.__glpythonSessions ??= new Map()
   const existingSession = sessions.get(sessionId)
@@ -185,6 +222,9 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   let pendingRun = false
   // The code file chosen in the split button's menu; null runs the last one.
   let chosenFile = null
+  // Filled once loaded, for building an IDE link without waiting.
+  let lzString = null
+  let loadedLibraries = []
 
   const showError = (message) => {
     if (!error) return
@@ -288,6 +328,8 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     }
   }
   libraries.then(showLibraries)
+  libraries.then((list) => { loadedLibraries = list })
+  window.__glpythonLzString.then((library) => { lzString = library; attach() }, () => {})
 
   const reportInputCapability = (source) => {
     if (!error) return
@@ -301,15 +343,113 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   // The program to send: the libraries plus the block's files, and which one
   // runs - the chosen file, else the last block (materials put the file to
   // run last). Without readable blocks, LiaScript's own text of the block.
+  const programOf = (codeFiles, libraryList) => {
+    const mainFile = codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
+    const loaded = libraryList.filter((library) => library.source !== undefined && !codeFiles.some((file) => file.path === library.path))
+    return { mainFile, files: [...loaded.map(({ path, source }) => ({ path, source })), ...codeFiles] }
+  }
   const readProgram = async (fallbackSource) => {
     const codeFiles = readCodeFiles() ?? (typeof fallbackSource === "string" ? [{ path: "main.py", source: fallbackSource }] : null)
     if (!codeFiles || codeFiles.length === 0) {
       showError(strings.sourceUnreadable)
       return null
     }
-    const mainFile = codeFiles.some((file) => file.path === chosenFile) ? chosenFile : codeFiles[codeFiles.length - 1].path
-    const loaded = (await libraries).filter((library) => library.source !== undefined && !codeFiles.some((file) => file.path === library.path))
-    return { mainFile, files: [...loaded.map(({ path, source }) => ({ path, source })), ...codeFiles] }
+    return programOf(codeFiles, await libraries)
+  }
+
+  // The IDE link for the program as it is now: every file (libraries
+  // included, so its imports work there too) and the file that runs. As in
+  // the IDE's own share links, a link too long for GitHub Pages (more than
+  // 8192 characters of path and query: "414 URI Too Long") carries the
+  // project in the fragment, which is never sent to the server.
+  const ideLink = () => {
+    const codeFiles = readCodeFiles()
+    if (!lzString || !codeFiles || codeFiles.length === 0) return null
+    const program = programOf(codeFiles, loadedLibraries)
+    const files = Object.fromEntries(program.files.map(({ path, source }) => [path, { path, label: path, kind: /\.py$/i.test(path) ? "python" : "text", code: source }]))
+    const heading = frame?.closest(".lia-slide__content")?.querySelector("h1, h2, h3, h4, h5, h6")?.textContent?.trim()
+    const encoded = lzString.compressToEncodedURIComponent(JSON.stringify({ v: 1, name: heading || document.title || strings.ideProject, mainFile: program.mainFile, files }))
+    const url = new URL(ideUrl)
+    url.searchParams.set("project", encoded)
+    if (url.pathname.length + url.search.length <= 8192) return url.toString()
+    url.search = ""
+    url.hash = new URLSearchParams({ project: encoded }).toString()
+    return url.toString()
+  }
+
+  // "Link kopiert ✓" for a moment, or - without a clipboard (e.g. not
+  // allowed) - the link in a field to copy by hand. writeText is called right
+  // in the tap's handler, which iPad Safari requires.
+  let statusTimer = null
+  const copyIdeLink = () => {
+    const link = ideLink()
+    const status = document.getElementById(`glpython-ide-status-${sessionId}`)
+    const field = document.getElementById(`glpython-ide-link-${sessionId}`)
+    if (!link || !status || !field) return
+    const copied = () => {
+      field.hidden = true
+      status.textContent = strings.linkCopied
+      window.clearTimeout(statusTimer)
+      statusTimer = window.setTimeout(() => { status.textContent = "" }, 3000)
+    }
+    const byHand = () => {
+      status.textContent = ""
+      const input = field.querySelector("input")
+      field.querySelector("span").textContent = strings.copyByHand
+      input.value = link
+      field.hidden = false
+      input.focus()
+      input.setSelectionRange(0, link.length)
+    }
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("no clipboard")
+      navigator.clipboard.writeText(link).then(copied, byHand)
+    } catch {
+      byHand()
+    }
+  }
+
+  const updateIdeButton = () => {
+    const split = document.getElementById(`glpython-ide-split-${sessionId}`)
+    const openButton = document.getElementById(`glpython-ide-${sessionId}`)
+    const menuButton = document.getElementById(`glpython-ide-menu-${sessionId}`)
+    const menu = document.getElementById(`glpython-ide-list-${sessionId}`)
+    if (!split || !openButton || !menuButton || !menu) return
+    setShown(split, mode !== "visual" && hasFeature("ide"), "inline-flex")
+    const disabled = lzString === null
+    if (openButton.disabled !== disabled) openButton.disabled = disabled
+    if (menuButton.disabled !== disabled) menuButton.disabled = disabled
+    if (openButton.textContent !== strings.openInIde) openButton.textContent = strings.openInIde
+    if (openButton.title !== strings.openInIdeTitle) openButton.title = strings.openInIdeTitle
+    if (menuButton.title !== strings.ideMenu) {
+      menuButton.title = strings.ideMenu
+      menuButton.setAttribute("aria-label", strings.ideMenu)
+    }
+    const closeMenu = () => {
+      menu.hidden = true
+      menuButton.setAttribute("aria-expanded", "false")
+    }
+    openButton.onclick = () => {
+      closeMenu()
+      const link = ideLink()
+      if (link) window.open(link, "_blank", "noopener")
+    }
+    menuButton.onclick = () => {
+      menu.hidden = !menu.hidden
+      menuButton.setAttribute("aria-expanded", String(!menu.hidden))
+    }
+    let item = menu.querySelector("button")
+    if (!item) {
+      item = document.createElement("button")
+      item.type = "button"
+      item.setAttribute("role", "menuitem")
+      menu.append(item)
+    }
+    if (item.textContent !== strings.copyIdeLink) item.textContent = strings.copyIdeLink
+    item.onclick = () => {
+      closeMenu()
+      copyIdeLink()
+    }
   }
 
   const postProgram = async (type, fallbackSource) => {
@@ -491,6 +631,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     setShown(warning, warningText !== "")
     for (const editor of codeBlock?.querySelectorAll("lia-editor") ?? []) indentWithSpaces(editor)
     updateRunButton(readCodeFiles() ?? [])
+    updateIdeButton()
     libraries.then(showLibraries)
     if (frame.dataset.glpythonInitialized === "true") return
     frame.dataset.glpythonInitialized = "true"
@@ -526,7 +667,14 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     <button id="glpython-tests-@0" class="glp-button glp-button--tests" type="button" disabled style="display:none">Tests</button>
     <button id="glpython-visualize-@0" class="glp-button glp-button--visualize" type="button" disabled>Visualize</button>
     <button id="glpython-reset-@0" class="glp-button glp-button--reset" type="button" disabled>Reset</button>
+    <span id="glpython-ide-split-@0" class="glp-ide-split" style="display:none">
+      <button id="glpython-ide-@0" class="glp-button glp-button--ide" type="button" disabled>Open in IDE</button>
+      <button id="glpython-ide-menu-@0" class="glp-button glp-button--ide-menu" type="button" disabled aria-haspopup="true" aria-expanded="false">▾</button>
+      <span id="glpython-ide-list-@0" class="glp-run-list" role="menu" hidden></span>
+    </span>
+    <span id="glpython-ide-status-@0" class="glp-ide-status" role="status"></span>
   </div>
+  <p id="glpython-ide-link-@0" class="glp-ide-link" hidden><label><span></span><input type="text" readonly></label></p>
   <p id="glpython-warning-@0" class="glpython-warning" style="display:none"></p>
   <div id="glpython-files-@0" class="glp-files" hidden></div>
   <p id="glpython-error-@0" class="glpython-error" hidden></p>
@@ -720,11 +868,13 @@ substitution at first.
 ## Buttons and profiles
 
 Below each block sits one row of buttons, left to right **▶ Run · Tests ·
-Visualize · Reset** («Ausführen · Tests · Visualisieren · Zurücksetzen» in German
-courses), framed together with the output panel. Every button has a text label
-and the classes `glp-button` plus one per function (`glp-button--run`,
-`glp-button--tests`, `glp-button--visualize`, `glp-button--reset`); ▶ Run also
-has `glp-button--primary`, its ▾ menu `glp-button--run-menu`. The row has
+Visualize · Reset · Open in IDE ▾** («Ausführen · Tests · Visualisieren ·
+Zurücksetzen · In IDE öffnen ▾» in German courses), framed together with the
+output panel. Every button has a text label and the classes `glp-button` plus
+one per function (`glp-button--run`, `glp-button--tests`,
+`glp-button--visualize`, `glp-button--reset`, `glp-button--ide`); ▶ Run also
+has `glp-button--primary`, its ▾ menu `glp-button--run-menu`, and Open in IDE's
+▾ menu `glp-button--ide-menu`. The row has
 `glp-buttons`, so a course can restyle all of it with `@style`.
 
 The block has glpython's own look (the course design: white, light grey code
@@ -755,9 +905,22 @@ p.lia-paragraph:empty:has(+ .glpython-embed) { display: none; }
 This depends on LiaScript's internal classes and should be checked after
 LiaScript updates.
 
+**Open in IDE** («In IDE öffnen») opens the block's current code as a copy in
+the glpython IDE (<https://glpython-edu.github.io/>) in a new tab, e.g. for
+handing in a solution; its tooltip says that changes there don't come back to
+the course. Its ▾ menu has **Copy IDE link** («IDE-Link kopieren»), which copies
+the same link and confirms with «Link kopiert ✓», or, where the browser doesn't
+allow copying, shows the link in a field to copy by hand. The link is an IDE
+share link: every file of the block (and its libraries) and the file that runs.
+A link longer than GitHub Pages accepts (8192 characters of path and query, a
+program of roughly 5,000 to 30,000 characters) carries the project after `#`
+instead of `?`. The macro loads [lz-string](https://github.com/pieroxy/lz-string)
+1.5.0 from jsDelivr for it, the IDE's compression; until that has loaded, the
+button stays disabled.
+
 `features=` in the macro's argument shows only the listed parts: `run`, `tests`,
-`visualize`, `reset`, `repl` (the input line below the output) and `export` (the
-visualizer's «→-Kette kopieren»). Without it, everything shows. Hidden parts are
+`visualize`, `reset`, `repl` (the input line below the output), `export` (the
+visualizer's «→-Kette kopieren») and `ide` (Open in IDE). Without it, everything shows. Hidden parts are
 not rendered at all. An unknown name shows a short warning below the buttons.
 `large` makes the code 20px (line height 1.6) and the visualizer at least 60% of
 the window, e.g. for the projector in presentation mode.
@@ -766,8 +929,8 @@ A course builds its own profiles from these options as macros in its header,
 passing `@0` on so a block can add more options (a mode or library URLs):
 
 ```text
-@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset @0)
-@Code.rezept:   @GLPython.eval(features=run,repl,visualize,tests,reset @0)
+@Code.erkunden: @GLPython.eval(features=run,repl,visualize,reset,ide @0)
+@Code.rezept:   @GLPython.eval(features=run,repl,visualize,tests,reset,ide @0)
 @Code.pruefung: @GLPython.eval(features=run,reset @0)
 @Code.demo:     @GLPython.visual(large @0)
 ```

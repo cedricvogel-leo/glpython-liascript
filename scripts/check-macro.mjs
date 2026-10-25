@@ -23,6 +23,14 @@ if (blocks.length === 0) {
 const folder = mkdtempSync(join(tmpdir(), 'glpython-macro-'))
 let failed = 0
 for (const [index, block] of blocks.entries()) {
+  // LiaScript replaces "@1" wherever it appears, also inside a URL such as
+  // ".../lz-string@1.5.0/..."; a placeholder the macro means stands on its
+  // own ("@0"), never right after a letter, digit or "-./". Write "\u0040".
+  block.code.split('\n').forEach((text, offset) => {
+    if (!/[\w.\/-]@[0-9]/.test(text)) return
+    failed += 1
+    console.error(`README.md line ${block.line + offset}: LiaScript replaces the "@<digit>" in ${JSON.stringify(text.trim())} with a macro argument; write "\\u0040" for a literal "@".`)
+  })
   const file = join(folder, `block-${index + 1}.js`)
   writeFileSync(file, block.code)
   const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
