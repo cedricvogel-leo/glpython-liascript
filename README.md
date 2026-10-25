@@ -538,7 +538,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 # glpython for LiaScript
 
 Run and visualize Python directly in a LiaScript course with the browser-based
-[glpython](https://github.com/glpython-edu/glpython) editor.
+[glpython](https://github.com/glpython-edu/glpython-edu.github.io) editor.
 
 The macros use LiaScript's native editor as the source of truth and a separately
 hosted iframe for execution and visualization. Python runs locally in the learner's browser through Pyodide; the current source is sent for each action through an
