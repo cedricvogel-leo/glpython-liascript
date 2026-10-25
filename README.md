@@ -63,6 +63,16 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   const unknownFeatures = requestedFeatures.filter((name) => !featureNames.includes(name))
   const hasFeature = (name) => requestedFeatures.includes(name)
   const large = options.includes("large")
+  // "large": the visualizer at least 60% of the window - the slide in
+  // LiaScript's presentation mode - passed in pixels, since the iframe's
+  // own height follows its content.
+  const largeVisualizerHeight = Math.round(window.innerHeight * 0.6)
+  // A visualization-only block starts at the height a short visualization
+  // ends up with (with "large": its visualizer's), and never gets smaller.
+  // Until its trace arrives, the embed reports only its loading state
+  // (160px), so the iframe would first shrink and then grow again - in a
+  // course e.g. right when a quiz's solution opens.
+  const minHeight = mode !== "visual" ? 170 : large ? largeVisualizerHeight : 190
   // The course's own language (its "language:" header, which LiaScript sets
   // as the page's lang attribute), else the browser's, else English. Only the
   // primary subtag counts ("de-CH" -> "de"); an unsupported language such as
@@ -361,7 +371,7 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     } else if (message.type === "glpython:resize" && Number.isFinite(message.height)) {
       // The embed's height follows its content (the visualizer too, unless
       // "large" asks for 60% of the window).
-      frame.style.height = `${Math.max(170, Math.min(message.height, 1200))}px`
+      frame.style.height = `${Math.max(minHeight, Math.min(message.height, 1200))}px`
     } else if (message.type === "glpython:error") {
       showError(message.message || strings.embedError)
     }
@@ -484,17 +494,14 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
     libraries.then(showLibraries)
     if (frame.dataset.glpythonInitialized === "true") return
     frame.dataset.glpythonInitialized = "true"
-    if (mode === "visual") frame.style.height = "420px"
+    if (mode === "visual") frame.style.height = `${minHeight}px`
     frame.title = `${strings.frameTitle} (${mode})`
     const query = new URLSearchParams({ parentOrigin: window.location.origin, mode, lang: language })
     if (visualizerMode) query.set("visualizer", visualizerMode)
     if (featuresOption) query.set("features", requestedFeatures.filter((name) => featureNames.includes(name)).join(","))
-    // "large": the visualizer at least 60% of the window - the slide in
-    // LiaScript's presentation mode - passed in pixels, since the iframe's
-    // own height follows its content.
     if (large) {
       query.set("size", "large")
-      query.set("visualizerHeight", String(Math.round(window.innerHeight * 0.6)))
+      query.set("visualizerHeight", String(largeVisualizerHeight))
     }
     frame.src = `${embedUrl}?${query}`
   }
