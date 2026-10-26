@@ -13,41 +13,26 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
 
 @GLPython.visual: @GLPython.embed(@uid,visual,@0,@1,@2,@3,@4,@5,@6,@7)
 
-@GLPython.embed
-<script>
-(() => {
-  const session = window.__glpythonSessions?.get("@0")
-  const source = "@'input"
-  if (!session) {
-    const primary = (tag) => (tag || "").toLowerCase().split("-")[0]
-    const german = [primary(document.documentElement.lang), primary(navigator.language)].find((language) => ["de", "en"].includes(language)) === "de"
-    const message = german
-      ? "Die glpython-Laufzeit ist noch nicht bereit."
-      : "The glpython runtime is not ready."
-    send.lia(`HTML: <pre style='color:red'>${message}</pre>`)
-    return
-  }
-  session.run(source)
-  window.setTimeout(() => send.lia("LIA: stop"), 0)
-})()
-
-"LIA: wait"
-</script>
-
-<script run-once>
-(() => {
+@onload
+// The shared code of every glpython block, defined once per course. The
+// macro's own run-once block only passes its arguments: LiaScript expands a
+// macro into the slide, and the whole code in every block made slides so long
+// that Chrome failed on them (LiaScript then builds a regular expression from
+// a wrong column; it happened when a slide with several blocks and a choice
+// quiz was opened directly). Blocks that run before this code wait in
+// window.__glpythonPending.
+window.__glpythonMount = (args, send) => {
   const protocolVersion = 4
   const embedOrigin = "https://glpython-edu.github.io"
   const embedUrl = `${embedOrigin}/glpython-editor/index.html`
-  const sessionId = "@0"
-  const mode = "@1"
+  const [sessionId, mode, ...optionArguments] = args
   // Optional per block, separated by spaces in any order: "box" or
   // "substitution" presets the visualizer's mode, and URLs of shared Python
   // files to load as libraries, e.g. @GLPython.eval(box https://…/parser.py).
   // LiaScript splits macro arguments at commas, so "features=run,repl" arrives
   // as several arguments: they are joined back together here. Arguments that
   // weren't given stay literal ("@3") and are left out.
-  const options = ["@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9"]
+  const options = optionArguments
     .filter((argument) => !/^@[0-9]$/.test(argument))
     .join(",")
     .split(/\s+/)
@@ -683,6 +668,38 @@ comment:  Embed the glpython editor, execution visualizer, and turtle graphics
   window.addEventListener("message", onMessage)
   new MutationObserver(attach).observe(document.body, { childList: true, subtree: true })
   attach()
+}
+for (const mount of window.__glpythonPending ?? []) mount()
+window.__glpythonPending = []
+@end
+
+@GLPython.embed
+<script>
+(() => {
+  const session = window.__glpythonSessions?.get("@0")
+  const source = "@'input"
+  if (!session) {
+    const primary = (tag) => (tag || "").toLowerCase().split("-")[0]
+    const german = [primary(document.documentElement.lang), primary(navigator.language)].find((language) => ["de", "en"].includes(language)) === "de"
+    const message = german
+      ? "Die glpython-Laufzeit ist noch nicht bereit."
+      : "The glpython runtime is not ready."
+    send.lia(`HTML: <pre style='color:red'>${message}</pre>`)
+    return
+  }
+  session.run(source)
+  window.setTimeout(() => send.lia("LIA: stop"), 0)
+})()
+
+"LIA: wait"
+</script>
+
+<script run-once>
+(() => {
+  // The code itself is in @onload, see there.
+  const mount = () => window.__glpythonMount(["@0", "@1", "@2", "@3", "@4", "@5", "@6", "@7", "@8", "@9"], send)
+  if (window.__glpythonMount) mount()
+  else (window.__glpythonPending ??= []).push(mount)
 })()
 
 "LIA: wait"
