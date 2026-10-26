@@ -1016,3 +1016,10 @@ since a merge to `main` reaches every course.
 
 For local embed development, change `embedOrigin` and `embedUrl` in the template
 header to the origin printed by `npm run dev:embed` in `glpython-editor`.
+
+## Lizenz / License
+
+MIT – see [LICENSE](https://github.com/glpython-edu/glpython-liascript/blob/main/LICENSE).
+The macro includes no third-party code; it loads the glpython embed (MIT) and
+[lz-string](https://github.com/pieroxy/lz-string) (MIT, for the IDE links)
+when a course runs.
