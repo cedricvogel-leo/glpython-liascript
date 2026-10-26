@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-The LiaScript macro that embeds glpython in courses. `README.md` is both the documentation and the macro itself: its header comment defines `@GLPython.eval`, `@GLPython.turtle` and `@GLPython.visual` and holds two `<script>` blocks (the per-run block and a `run-once` block with the session logic). Courses import it from `main`:
+The LiaScript macro that embeds glpython in courses. `README.md` is both the documentation and the macro itself: its header comment defines `@GLPython.eval`, `@GLPython.turtle` and `@GLPython.visual` and holds the session logic in `@onload` (`window.__glpythonMount`, run once per course) plus two `<script>` blocks (the per-run block and a short `run-once` block that only passes the block's arguments to `__glpythonMount`). Keep the code in `@onload`, not in the macro: LiaScript expands a macro into every slide that uses it, and long expansions break slides in Chrome (`Regular expression too large`, when a slide with a choice quiz is opened directly; cause: the column LiaScript's parser computes after a macro expansion). Courses import it from `main`:
 
 ```
 import: https://raw.githubusercontent.com/glpython-edu/glpython-liascript/main/README.md

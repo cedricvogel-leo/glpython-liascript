@@ -15,6 +15,11 @@ const blocks = [...readme.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(
   code: match[1],
   line: readme.slice(0, match.index).split('\n').length,
 }))
+// The shared code in @onload, which LiaScript runs once per course as written.
+// Its first line is the one with @onload, like <script> above.
+for (const match of readme.matchAll(/^@onload\n([\s\S]*?)\n@end$/gm)) {
+  blocks.push({ code: `\n${match[1]}`, line: readme.slice(0, match.index).split('\n').length })
+}
 if (blocks.length === 0) {
   console.error('No <script> blocks found in README.md.')
   process.exit(1)
@@ -43,4 +48,4 @@ for (const [index, block] of blocks.entries()) {
   }
 }
 if (failed > 0) process.exit(1)
-console.log(`Macro check passed: ${blocks.length} <script> blocks.`)
+console.log(`Macro check passed: ${blocks.length} blocks (<script> and @onload).`)
