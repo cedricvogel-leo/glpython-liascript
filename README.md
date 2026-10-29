@@ -363,7 +363,10 @@ window.__glpythonMount = (args, send) => {
     const codeFiles = readCodeFiles()
     if (!lzString || !codeFiles || codeFiles.length === 0) return null
     const program = programOf(codeFiles, loadedLibraries)
-    const files = Object.fromEntries(program.files.map(({ path, source }) => [path, { path, label: path, kind: /\.py$/i.test(path) ? "python" : "text", code: source }]))
+    // Libraries are read-only there too, as in «Datei ansehen» here (a block
+    // file with a library's name replaces it and stays editable).
+    const isLibrary = (path) => !codeFiles.some((file) => file.path === path)
+    const files = Object.fromEntries(program.files.map(({ path, source }) => [path, { path, label: path, kind: /\.py$/i.test(path) ? "python" : "text", code: source, ...(isLibrary(path) ? { readOnly: true } : {}) }]))
     const heading = frame?.closest(".lia-slide__content")?.querySelector("h1, h2, h3, h4, h5, h6")?.textContent?.trim()
     const encoded = lzString.compressToEncodedURIComponent(JSON.stringify({ v: 1, name: heading || document.title || strings.ideProject, mainFile: program.mainFile, files }))
     const url = new URL(ideUrl)
@@ -969,6 +972,8 @@ hand. Its ▾ menu has **Open in IDE** («In IDE öffnen»), which opens the sam
 link in a new tab; its tooltip says that changes there don't come back to the
 course. The link is an IDE
 share link: every file of the block (and its libraries) and the file that runs.
+Libraries are read-only in the IDE (a lock, no editing, renaming or deleting),
+as they are here.
 A link longer than GitHub Pages accepts (8192 characters of path and query, a
 program of roughly 5,000 to 30,000 characters) carries the project after `#`
 instead of `?`. The macro loads [lz-string](https://github.com/pieroxy/lz-string)
