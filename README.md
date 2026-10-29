@@ -40,11 +40,13 @@ window.__glpythonMount = (args, send) => {
   const visualizerMode = options.find((option) => option === "box" || option === "substitution") ?? null
   const libraryUrls = options.filter((option) => /^https?:\/\//.test(option))
   // "features=run,repl,…" shows only these parts (the course builds its
-  // profiles from it); without it, everything shows. "large" enlarges the
-  // code and the visualizer, e.g. for a demo on the projector.
-  const featureNames = ["run", "tests", "visualize", "reset", "repl", "export", "ide"]
+  // profiles from it); without it, everything shows - except "coverage"
+  // (after Tests, the lines no example executed), which a course switches on
+  // explicitly. "large" enlarges the code and the visualizer, e.g. for a demo
+  // on the projector.
+  const featureNames = ["run", "tests", "visualize", "reset", "repl", "export", "ide", "coverage"]
   const featuresOption = options.find((option) => option.startsWith("features="))
-  const requestedFeatures = featuresOption ? featuresOption.slice("features=".length).split(",").map((name) => name.trim()).filter(Boolean) : featureNames
+  const requestedFeatures = featuresOption ? featuresOption.slice("features=".length).split(",").map((name) => name.trim()).filter(Boolean) : featureNames.filter((name) => name !== "coverage")
   const unknownFeatures = requestedFeatures.filter((name) => !featureNames.includes(name))
   const hasFeature = (name) => requestedFeatures.includes(name)
   const large = options.includes("large")
@@ -977,6 +979,17 @@ button stays disabled.
 `visualize`, `reset`, `repl` (the input line below the output), `export` (the
 visualizer's «→-Kette kopieren») and `ide` (Copy IDE link ▾). Without it, everything shows. Hidden parts are
 not rendered at all. An unknown name shows a short warning below the buttons.
+
+`coverage` is the one name that isn't part of «everything»: only a block that
+lists it gets it. After **Tests**, when all examples pass, the report then
+lists the lines of the block's functions that no example executed, each with
+its code («Von keinem Beispiel ausgeführt: Zeile 11: `return "ungenügend"`»),
+or, when every line ran, a neutral note that this doesn't show whether the
+examples check the edge cases. Coverage finds untested code, not wrong code:
+`return note > 4` is fully covered by `5.5` and `3.5`. Only the file that runs
+counts, not libraries or other files, and only lines in function bodies (not
+`def` lines, docstrings or code outside functions). Nothing is marked in the
+block's code editor; the report gives the line and its code.
 `large` makes the code 20px (line height 1.6) and the visualizer at least 60% of
 the window, e.g. for the projector in presentation mode.
 
@@ -986,6 +999,7 @@ passing `@0` on so a block can add more options (a mode or library URLs):
 ```text
 @Code.erkunden: @GLPython.eval(features=run,repl,visualize,ide @0)
 @Code.rezept:   @GLPython.eval(features=run,repl,visualize,tests,ide @0)
+@Code.rezept3:  @GLPython.eval(features=run,repl,visualize,tests,ide,coverage @0)
 @Code.pruefung: @GLPython.eval(features=run @0)
 @Code.demo:     @GLPython.visual(large @0)
 ```
