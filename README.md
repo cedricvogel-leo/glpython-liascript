@@ -96,6 +96,7 @@ window.__glpythonMount = (args, send) => {
       copyIdeLinkTitle: "Kopiert einen Link zu einer Kopie dieses Codes in der IDE, z. B. für die Abgabe.",
       linkCopied: "Link kopiert ✓",
       copyByHand: "Link zum Kopieren:",
+      longLink: (length) => `Dieser Link ist sehr lang (${length} Zeichen). Manche Programme, z. B. OneNote, kürzen solche Links. Für eine Abgabe «In IDE öffnen» wählen und das Projekt dort herunterladen.`,
       ideProject: "Aus dem Kurs",
     },
     en: {
@@ -125,6 +126,7 @@ window.__glpythonMount = (args, send) => {
       copyIdeLinkTitle: "Copies a link to a copy of this code in the IDE, e.g. to hand it in.",
       linkCopied: "Link copied ✓",
       copyByHand: "Link to copy:",
+      longLink: (length) => `This link is very long (${length} characters). Some programs, e.g. OneNote, shorten such links. For a hand-in, choose «Open in IDE» and download the project there.`,
       ideProject: "From the course",
     },
   }[language]
@@ -137,7 +139,7 @@ window.__glpythonMount = (args, send) => {
     const defaults = {
       bg: "#FFFFFF", surface: "#F3F4F6", border: "#D1D5DB", "border-control": "#6B7280",
       text: "#1A1A1A", "text-muted": "#4B5563", accent: "#1F3A5F", "on-accent": "#FFFFFF",
-      error: "#B42318", warning: "#8A4B00", radius: "4px",
+      error: "#B42318", warning: "#8A4B00", info: "#1D5B9A", "info-bg": "#E3EEFA", radius: "4px",
       "font-ui": "system-ui, sans-serif", "font-code": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     }
     const token = (name) => `var(--glp-${name}, ${defaults[name]})`
@@ -163,6 +165,7 @@ window.__glpythonMount = (args, send) => {
 .glpython-embed .glp-button--ide-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; padding-left: 6px; padding-right: 8px; }
 .glpython-embed .glp-ide-status { color: ${token("text-muted")}; }
 .glpython-embed .glp-ide-link { margin: 0; padding: 0 12px 12px; }
+.glpython-embed .glp-ide-note { margin: 0 12px 12px; padding: 6px 10px; color: ${token("text")}; background: ${token("info-bg")}; border-left: 3px solid ${token("info")}; border-radius: ${token("radius")}; font-size: 13px; }
 .glpython-embed .glp-ide-link input { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 6px 8px; color: ${token("text")}; background: ${token("surface")}; border: 1px solid ${token("border-control")}; border-radius: ${token("radius")}; font: 13px/1.4 ${token("font-code")}; }
 .glpython-embed .glpython-warning { margin: 0; padding: 0 12px 12px; color: ${token("warning")}; }
 .glpython-embed .glpython-error { margin: 0; padding: 0 12px 12px; color: ${token("error")}; }
@@ -221,7 +224,6 @@ window.__glpythonMount = (args, send) => {
   let chosenFile = null
   // Filled once loaded, for building an IDE link without waiting.
   let lzString = null
-  let loadedLibraries = []
 
   const showError = (message) => {
     if (!error) return
@@ -325,7 +327,6 @@ window.__glpythonMount = (args, send) => {
     }
   }
   libraries.then(showLibraries)
-  libraries.then((list) => { loadedLibraries = list })
   window.__glpythonLzString.then((library) => { lzString = library; attach() }, () => {})
 
   const reportInputCapability = (source) => {
@@ -354,21 +355,27 @@ window.__glpythonMount = (args, send) => {
     return programOf(codeFiles, await libraries)
   }
 
-  // The IDE link for the program as it is now: every file (libraries
-  // included, so its imports work there too) and the file that runs. As in
-  // the IDE's own share links, a link too long for GitHub Pages (more than
-  // 8192 characters of path and query: "414 URI Too Long") carries the
-  // project in the fragment, which is never sent to the server.
+  // The IDE link for the program as it is now: every file of the block and
+  // the file that runs, and the libraries by their URL (the IDE's link
+  // version 2), not their code - the IDE fetches them as the block does, read-
+  // only there too. So a block with a course's parser keeps a short link. A
+  // block file with a library's name replaces it. As in the IDE's own share
+  // links, a link too long for GitHub Pages (more than 8192 characters of
+  // path and query: "414 URI Too Long") carries the project in the fragment,
+  // which is never sent to the server.
   const ideLink = () => {
     const codeFiles = readCodeFiles()
     if (!lzString || !codeFiles || codeFiles.length === 0) return null
-    const program = programOf(codeFiles, loadedLibraries)
-    // Libraries are read-only there too, as in «Datei ansehen» here (a block
-    // file with a library's name replaces it and stays editable).
-    const isLibrary = (path) => !codeFiles.some((file) => file.path === path)
-    const files = Object.fromEntries(program.files.map(({ path, source }) => [path, { path, label: path, kind: /\.py$/i.test(path) ? "python" : "text", code: source, ...(isLibrary(path) ? { readOnly: true } : {}) }]))
+    const program = programOf(codeFiles, [])
+    const libraries = libraryUrls
+      .map((url) => ({ path: moduleFileName(fileNameOfUrl(url), "bibliothek.py"), url }))
+      .filter((library) => !codeFiles.some((file) => file.path === library.path))
+    const files = Object.fromEntries([
+      ...libraries.map(({ path, url }) => [path, { path, url, readOnly: true }]),
+      ...codeFiles.map(({ path, source }) => [path, { path, label: path, kind: /\.py$/i.test(path) ? "python" : "text", code: source }]),
+    ])
     const heading = frame?.closest(".lia-slide__content")?.querySelector("h1, h2, h3, h4, h5, h6")?.textContent?.trim()
-    const encoded = lzString.compressToEncodedURIComponent(JSON.stringify({ v: 1, name: heading || document.title || strings.ideProject, mainFile: program.mainFile, files }))
+    const encoded = lzString.compressToEncodedURIComponent(JSON.stringify({ v: libraries.length > 0 ? 2 : 1, name: heading || document.title || strings.ideProject, mainFile: program.mainFile, files }))
     const url = new URL(ideUrl)
     url.searchParams.set("project", encoded)
     if (url.pathname.length + url.search.length <= 8192) return url.toString()
@@ -379,13 +386,19 @@ window.__glpythonMount = (args, send) => {
 
   // "Link kopiert ✓" for a moment, or - without a clipboard (e.g. not
   // allowed) - the link in a field to copy by hand. writeText is called right
-  // in the tap's handler, which iPad Safari requires.
+  // in the tap's handler, which iPad Safari requires. A link longer than
+  // 2,083 characters (OneNote cuts links there) is copied too, with a note.
   let statusTimer = null
   const copyIdeLink = () => {
     const link = ideLink()
     const status = document.getElementById(`glpython-ide-status-${sessionId}`)
     const field = document.getElementById(`glpython-ide-link-${sessionId}`)
+    const note = document.getElementById(`glpython-ide-note-${sessionId}`)
     if (!link || !status || !field) return
+    if (note) {
+      note.hidden = link.length <= 2083
+      note.textContent = note.hidden ? "" : strings.longLink(link.length)
+    }
     const copied = () => {
       field.hidden = true
       status.textContent = strings.linkCopied
@@ -728,6 +741,7 @@ window.__glpythonPending = []
     <span id="glpython-ide-status-@0" class="glp-ide-status" role="status"></span>
   </div>
   <p id="glpython-ide-link-@0" class="glp-ide-link" hidden><label><span></span><input type="text" readonly></label></p>
+  <p id="glpython-ide-note-@0" class="glp-ide-note" role="status" hidden></p>
   <p id="glpython-warning-@0" class="glpython-warning" style="display:none"></p>
   <div id="glpython-files-@0" class="glp-files" hidden></div>
   <p id="glpython-error-@0" class="glpython-error" hidden></p>
@@ -971,9 +985,13 @@ where the browser doesn't allow copying, shows the link in a field to copy by
 hand. Its ▾ menu has **Open in IDE** («In IDE öffnen»), which opens the same
 link in a new tab; its tooltip says that changes there don't come back to the
 course. The link is an IDE
-share link: every file of the block (and its libraries) and the file that runs.
+share link: every file of the block and the file that runs, and the block's
+libraries by their URL - the IDE fetches them, so a block with a library keeps
+a short link (an Etappe 4 block with `parser.py`: about 1,300 characters).
 Libraries are read-only in the IDE (a lock, no editing, renaming or deleting),
-as they are here.
+as they are here. A link longer than 2,083 characters - OneNote, for one, cuts
+links there - is still copied, with a note to choose «In IDE öffnen» and
+download the project there for a hand-in.
 A link longer than GitHub Pages accepts (8192 characters of path and query, a
 program of roughly 5,000 to 30,000 characters) carries the project after `#`
 instead of `?`. The macro loads [lz-string](https://github.com/pieroxy/lz-string)
